@@ -1,0 +1,212 @@
+:root,
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0e1116;
+  color: #e6edf3;
+}
+
+.app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.runtime-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 70;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(15, 21, 30, 0.85);
+  border: 1px solid #34465f;
+  font-size: 12px;
+  color: #9fd3ff;
+}
+
+.hud {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 60;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(15, 21, 30, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+.hud button {
+  border: 1px solid #314158;
+  background: #1a2535;
+  color: #e6edf3;
+  border-radius: 6px;
+  height: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.hud button:hover {
+  background: #25344b;
+}
+
+.hud .status {
+  font-size: 12px;
+  color: #9fb2cc;
+}
+
+.metrics {
+  position: absolute;
+  top: auto;
+  bottom: 12px;
+  left: 12px;
+  z-index: 60;
+  display: grid;
+  gap: 4px;
+  min-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(15, 21, 30, 0.8);
+  font-size: 12px;
+  color: #b7c8de;
+}
+
+.overlay-pill {
+  position: relative;
+  border: 1px solid #42608a;
+  border-radius: 999px;
+  background: rgba(24, 38, 61, 0.92);
+  color: #e6edf3;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.overlay-pill:hover {
+  background: rgba(41, 62, 97, 0.95);
+}
+
+.overlay-pill.is-selected {
+  border-color: #facc15;
+  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.35);
+}
+
+.float-screen {
+  position: absolute;
+}
+
+.overlay-resize-handle {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px 0 8px 0;
+  background: rgba(250, 204, 21, 0.95);
+  border: 1px solid rgba(20, 24, 31, 0.9);
+  pointer-events: none;
+}
+
+.tool-float-btn {
+  border-color: #7dd3fc;
+  background: rgba(13, 48, 71, 0.95);
+}
+
+.tool-float-btn:hover {
+  background: rgba(23, 78, 112, 0.95);
+}
+
+.dom-node {
+  position: absolute;
+  border: 1px solid #365173;
+  border-radius: 10px;
+  background: rgba(23, 35, 55, 0.9);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.dom-node.is-selected {
+  border-color: #facc15;
+  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.dom-photo {
+  overflow: hidden;
+}
+
+.dom-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dom-text-inline {
+  position: absolute;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #b7c8de;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+.dom-text-inline.is-selected {
+  color: #f8fafc;
+  outline: 1px dashed rgba(250, 204, 21, 0.9);
+  outline-offset: 4px;
+}
+
+.dom-resize-handle {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px 0 8px 0;
+  background: rgba(250, 204, 21, 0.95);
+  border: 1px solid rgba(20, 24, 31, 0.9);
+  pointer-events: none;
+}
+
+.drawing-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.drawing-overlay.is-draw {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.drawing-overlay.is-select {
+  pointer-events: auto;
+  cursor: default;
+}
+
+.drawing-overlay.is-ui {
+  pointer-events: none;
+  cursor: default;
+}
+
+.drawing-overlay.is-pan {
+  pointer-events: none;
+  cursor: grab;
+}
+
+.hidden-file-input {
+  display: none;
+}

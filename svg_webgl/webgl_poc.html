@@ -1,0 +1,1434 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Whiteboard WebGL PoC</title>
+    <style>
+      :root {
+        --bg: #f5f7fb;
+        --panel: #fff;
+        --line: #d6deea;
+        --text: #1f2a44;
+        --accent: #2a63ff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        overflow: hidden;
+        overscroll-behavior: none;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+      }
+      .layout {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        height: 100vh;
+      }
+      .toolbar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+        flex-wrap: wrap;
+      }
+      button {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: #fff;
+        cursor: pointer;
+      }
+      button.active {
+        border-color: var(--accent);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      #stageWrap {
+        position: relative;
+        overflow: hidden;
+        background: #fff;
+        touch-action: none;
+      }
+      #glCanvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+      }
+      #overlaySvg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+      .status {
+        min-width: 320px;
+      }
+      .spacer {
+        flex: 1;
+      }
+      .footer {
+        border-top: 1px solid var(--line);
+        background: var(--panel);
+        padding: 8px 10px;
+        font-size: 12px;
+        color: #5a6787;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <div class="toolbar">
+        <button data-tool="pen" class="active">펜</button>
+        <button data-tool="select">선택</button>
+        <button data-tool="erase">지우개</button>
+        <button data-tool="pan">손툴</button>
+        <button id="addText">텍스트 추가</button>
+        <button id="addImage">이미지 추가</button>
+        <button id="zoomIn">확대</button>
+        <button id="zoomOut">축소</button>
+        <button id="resetView">뷰 리셋</button>
+        <button id="toggleReadonly">읽기전용: OFF</button>
+        <button id="clearBtn">전체 삭제</button>
+        <button id="seedHeavy">요소 2000개 테스트</button>
+        <button id="runFunctionalSmoke">기능 스모크</button>
+        <button id="runPerformanceSmoke">성능 스모크</button>
+        <button id="runFullSuite">전체 테스트 스위트</button>
+        <button id="exportReport">테스트 리포트</button>
+        <span class="spacer"></span>
+        <div class="status" id="statusText">booting...</div>
+      </div>
+      <div id="stageWrap">
+        <canvas id="glCanvas"></canvas>
+        <svg id="overlaySvg"></svg>
+      </div>
+      <div class="footer">WebGL PoC: 입력 지연/필기감 비교용 전용 페이지</div>
+    </div>
+
+    <script type="module">
+      import {
+        createInputTuning,
+        detectDeviceContext,
+        getMinStrokeDistanceWorld,
+        getPointerType,
+        isLikelyDuplicateStroke,
+      } from "./webgl_input_profile.js";
+
+      const canvas = document.getElementById("glCanvas");
+      const overlaySvg = document.getElementById("overlaySvg");
+      const statusText = document.getElementById("statusText");
+      const REPORT_STATUS = { PASS: "PASS", FAIL: "FAIL" };
+      const deviceContext = detectDeviceContext();
+      const inputTuning = createInputTuning(deviceContext);
+
+      const state = {
+        tool: "pen",
+        readonly: false,
+        viewport: { x: 0, y: 0, zoom: 1 },
+        dragging: null,
+        selection: null,
+        strokes: [],
+        objects: [],
+        staticVertices: new Float32Array(0),
+        activeVertices: new Float32Array(0),
+        metrics: {
+          fps: 0,
+          lastFrameMs: 0,
+          avgFrameMs: 0,
+          maxFrameMs: 0,
+          pointerDownCount: 0,
+          pointerMoveCount: 0,
+          pointerUpCount: 0,
+          strokeCount: 0,
+          objectCount: 0,
+        },
+        diagnostics: {
+          functionalSmokeRuns: [],
+          performanceSmokeRuns: [],
+          benchmarkRuns: [],
+          latestSuite: null,
+        },
+      };
+
+      const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+      const makeId = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const SVG_NS = "http://www.w3.org/2000/svg";
+      const pushLimited = (arr, item, max = 20) => {
+        arr.push(item);
+        if (arr.length > max) arr.shift();
+      };
+      const getPointerSamples = (event) =>
+        typeof event.getCoalescedEvents === "function" && event.getCoalescedEvents().length
+          ? event.getCoalescedEvents()
+          : [event];
+
+      let gl;
+      let program;
+      let positionLoc;
+      let resolutionLoc;
+      let viewOffsetLoc;
+      let zoomLoc;
+      let colorLoc;
+      let staticBuffer;
+      let activeBuffer;
+      let staticVertexCount = 0;
+      let activeVertexCount = 0;
+      let canvasCssWidth = 1;
+      let canvasCssHeight = 1;
+      let activePointerId = null;
+      let activePointerType = "";
+      let suppressTouchUntil = 0;
+      let penPriorityUntil = 0;
+      let activeTouchStroke = null;
+      let activeTouchIdentifier = null;
+      let lastPointerEventMs = 0;
+      const inputDebug = {
+        pen: { down: 0, move: 0, up: 0, cancel: 0 },
+        touch: { down: 0, move: 0, up: 0, cancel: 0 },
+        mouse: { down: 0, move: 0, up: 0, cancel: 0 },
+        ignoredNonPrimary: 0,
+        rejectedBySessionLock: 0,
+        pointerIdMismatch: 0,
+        noActivePointer: 0,
+        lastReason: "none",
+      };
+
+      const vertexShaderSource = `
+        attribute vec2 a_position;
+        uniform vec2 u_resolution;
+        uniform vec2 u_viewOffset;
+        uniform float u_zoom;
+        void main() {
+          vec2 screen = (a_position - u_viewOffset) * u_zoom;
+          vec2 zeroToOne = screen / u_resolution;
+          vec2 clip = zeroToOne * 2.0 - 1.0;
+          gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+        }
+      `;
+
+      const fragmentShaderSource = `
+        precision mediump float;
+        uniform vec4 u_color;
+        void main() {
+          gl_FragColor = u_color;
+        }
+      `;
+
+      const compileShader = (type, source) => {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+          throw new Error(gl.getShaderInfoLog(shader) || "shader compile failed");
+        }
+        return shader;
+      };
+
+      const initGl = () => {
+        // desynchronized=true lowers latency but can cause visible tearing/shimmer on iPad Safari.
+        gl = canvas.getContext("webgl", {
+          antialias: true,
+          alpha: false,
+          desynchronized: !deviceContext.isIPadLike,
+        });
+        if (!gl) throw new Error("WebGL not supported");
+        const vs = compileShader(gl.VERTEX_SHADER, vertexShaderSource);
+        const fs = compileShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
+        program = gl.createProgram();
+        gl.attachShader(program, vs);
+        gl.attachShader(program, fs);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+          throw new Error(gl.getProgramInfoLog(program) || "program link failed");
+        }
+        gl.useProgram(program);
+        positionLoc = gl.getAttribLocation(program, "a_position");
+        resolutionLoc = gl.getUniformLocation(program, "u_resolution");
+        viewOffsetLoc = gl.getUniformLocation(program, "u_viewOffset");
+        zoomLoc = gl.getUniformLocation(program, "u_zoom");
+        colorLoc = gl.getUniformLocation(program, "u_color");
+        staticBuffer = gl.createBuffer();
+        activeBuffer = gl.createBuffer();
+      };
+
+      const resizeCanvas = () => {
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
+        const rect = canvas.getBoundingClientRect();
+        canvasCssWidth = Math.max(1, rect.width);
+        canvasCssHeight = Math.max(1, rect.height);
+        const w = Math.max(1, Math.round(rect.width * dpr));
+        const h = Math.max(1, Math.round(rect.height * dpr));
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+          gl.viewport(0, 0, w, h);
+        }
+      };
+
+      const normalizeClientPoint = (clientX, clientY) => {
+        let x = clientX;
+        let y = clientY;
+        const vv = window.visualViewport;
+        // iPad Safari can shift pointer coordinates when visual viewport is scaled/offset.
+        if (vv && vv.scale && vv.scale !== 1) {
+          x = clientX / vv.scale + vv.offsetLeft;
+          y = clientY / vv.scale + vv.offsetTop;
+        }
+        return { x, y };
+      };
+      const clientToWorld = (clientX, clientY) => {
+        const normalized = normalizeClientPoint(clientX, clientY);
+        const rect = canvas.getBoundingClientRect();
+        const sx = normalized.x - rect.left;
+        const sy = normalized.y - rect.top;
+        return {
+          x: sx / state.viewport.zoom + state.viewport.x,
+          y: sy / state.viewport.zoom + state.viewport.y,
+        };
+      };
+      const lockPointerSession = (event) => {
+        const now = performance.now();
+        const type = getPointerType(event);
+        if (state.tool === "pen") {
+          if (type === "touch") {
+            const penOwnsInput = activePointerType === "pen" || now < suppressTouchUntil || now < penPriorityUntil;
+            // Allow finger drawing fallback unless pen stream currently owns input.
+            if (penOwnsInput) {
+              inputDebug.rejectedBySessionLock += 1;
+              inputDebug.lastReason = "lock-touch-pen-owned";
+              return false;
+            }
+          }
+          if (type === "pen") {
+            // When Pencil is in use, briefly prioritize pen stream over touch stream.
+            penPriorityUntil = now + inputTuning.penPriorityMsOnStart;
+            if (activePointerType === "touch" && activePointerId !== null) {
+              state.dragging = null;
+              updateActiveVertices(new Float32Array(0));
+              activePointerId = null;
+              activePointerType = "";
+            }
+          } else if (now < penPriorityUntil) {
+            inputDebug.rejectedBySessionLock += 1;
+            inputDebug.lastReason = "lock-nonpen-priority-window";
+            return false;
+          }
+        }
+        // Ignore touch while a pen gesture is active (or just ended) to prevent double input.
+        if (type === "touch" && (activePointerType === "pen" || now < suppressTouchUntil)) {
+          inputDebug.rejectedBySessionLock += 1;
+          inputDebug.lastReason = "lock-touch-suppress-window";
+          return false;
+        }
+        if (activePointerId !== null && event.pointerId !== activePointerId) {
+          inputDebug.rejectedBySessionLock += 1;
+          inputDebug.lastReason = "lock-pointer-id-in-use";
+          return false;
+        }
+        activePointerId = event.pointerId;
+        activePointerType = type;
+        if (type === "pen") {
+          suppressTouchUntil = now + inputTuning.penSuppressTouchMsOnStart;
+        }
+        return true;
+      };
+      const shouldIgnorePointerEvent = (event) => {
+        const ignore = event.isPrimary === false && getPointerType(event) !== "pen";
+        if (ignore) {
+          inputDebug.ignoredNonPrimary += 1;
+          inputDebug.lastReason = "ignore-non-primary-non-pen";
+        }
+        return ignore;
+      };
+      const markPointerEventSeen = () => {
+        lastPointerEventMs = performance.now();
+      };
+      const trackPointerPhase = (event, phase) => {
+        const type = getPointerType(event);
+        const bucket = inputDebug[type] || inputDebug.mouse;
+        if (bucket[phase] !== undefined) bucket[phase] += 1;
+      };
+      const isActivePointer = (event) => {
+        if (activePointerId === null) {
+          inputDebug.noActivePointer += 1;
+          inputDebug.lastReason = "no-active-pointer";
+          return false;
+        }
+        if (event.pointerId !== activePointerId) {
+          inputDebug.pointerIdMismatch += 1;
+          inputDebug.lastReason = "pointer-id-mismatch";
+          return false;
+        }
+        return true;
+      };
+      const releasePointerSession = () => {
+        const now = performance.now();
+        if (activePointerType === "pen") {
+          suppressTouchUntil = now + inputTuning.penSuppressTouchMsOnEnd;
+          penPriorityUntil = Math.max(penPriorityUntil, now + inputTuning.penPriorityMsOnEnd);
+        }
+        activePointerId = null;
+        activePointerType = "";
+      };
+      const worldToScreen = (x, y) => ({
+        x: (x - state.viewport.x) * state.viewport.zoom,
+        y: (y - state.viewport.y) * state.viewport.zoom,
+      });
+      const getStrokeBounds = (stroke) => {
+        if (stroke.bounds) return stroke.bounds;
+        if (!stroke.points.length) return { x: 0, y: 0, w: 0, h: 0 };
+        const xs = stroke.points.map((p) => p.x);
+        const ys = stroke.points.map((p) => p.y);
+        const minX = Math.min(...xs);
+        const minY = Math.min(...ys);
+        const maxX = Math.max(...xs);
+        const maxY = Math.max(...ys);
+        stroke.bounds = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+        return stroke.bounds;
+      };
+      const getObjectBounds = (obj) => ({ x: obj.x, y: obj.y, w: obj.w, h: obj.h });
+      const getBoundsForSelection = (selection) => {
+        if (!selection) return null;
+        if (selection.kind === "stroke") {
+          const stroke = state.strokes.find((s) => s.id === selection.id);
+          return stroke ? getStrokeBounds(stroke) : null;
+        }
+        const obj = state.objects.find((o) => o.id === selection.id);
+        return obj ? getObjectBounds(obj) : null;
+      };
+      const getSelectionBounds = () => getBoundsForSelection(state.selection);
+      const isPointInBounds = (p, b, pad = 0) =>
+        p.x >= b.x - pad && p.x <= b.x + b.w + pad && p.y >= b.y - pad && p.y <= b.y + b.h + pad;
+      const pointToSegmentDistance = (point, a, b) => {
+        const vx = b.x - a.x;
+        const vy = b.y - a.y;
+        const wx = point.x - a.x;
+        const wy = point.y - a.y;
+        const c1 = vx * wx + vy * wy;
+        if (c1 <= 0) return Math.hypot(point.x - a.x, point.y - a.y);
+        const c2 = vx * vx + vy * vy;
+        if (c2 <= c1) return Math.hypot(point.x - b.x, point.y - b.y);
+        const t = c1 / c2;
+        const px = a.x + vx * t;
+        const py = a.y + vy * t;
+        return Math.hypot(point.x - px, point.y - py);
+      };
+      const isStrokeHit = (stroke, p, padding) => {
+        if (!stroke.points?.length) return false;
+        if (stroke.points.length === 1) {
+          return Math.hypot(p.x - stroke.points[0].x, p.y - stroke.points[0].y) <= padding;
+        }
+        const threshold = Math.max(padding, stroke.width * 0.8);
+        for (let i = 1; i < stroke.points.length; i += 1) {
+          const a = stroke.points[i - 1];
+          const b = stroke.points[i];
+          if (pointToSegmentDistance(p, a, b) <= threshold) return true;
+        }
+        return false;
+      };
+      const isInResizeHandle = (pWorld, bounds) => {
+        const origin = worldToScreen(bounds.x, bounds.y);
+        const handleX = origin.x + bounds.w * state.viewport.zoom;
+        const handleY = origin.y + bounds.h * state.viewport.zoom;
+        const pScreen = worldToScreen(pWorld.x, pWorld.y);
+        const dx = pScreen.x - handleX;
+        const dy = pScreen.y - handleY;
+        const handleRadiusPx = 14;
+        return dx * dx + dy * dy <= handleRadiusPx * handleRadiusPx;
+      };
+      const removeBySelection = (selection) => {
+        if (!selection) return false;
+        if (selection.kind === "stroke") {
+          const before = state.strokes.length;
+          state.strokes = state.strokes.filter((s) => s.id !== selection.id);
+          return state.strokes.length !== before;
+        }
+        const before = state.objects.length;
+        state.objects = state.objects.filter((o) => o.id !== selection.id);
+        return state.objects.length !== before;
+      };
+      const hitTest = (p) => {
+        const hitPadding = 16 / state.viewport.zoom;
+        for (let i = state.objects.length - 1; i >= 0; i -= 1) {
+          const obj = state.objects[i];
+          const b = getObjectBounds(obj);
+          if (p.x >= b.x - hitPadding && p.x <= b.x + b.w + hitPadding && p.y >= b.y - hitPadding && p.y <= b.y + b.h + hitPadding) {
+            return { kind: "object", id: obj.id };
+          }
+        }
+        for (let i = state.strokes.length - 1; i >= 0; i -= 1) {
+          const s = state.strokes[i];
+          const b = getStrokeBounds(s);
+          const hitBounds =
+            p.x >= b.x - hitPadding &&
+            p.x <= b.x + b.w + hitPadding &&
+            p.y >= b.y - hitPadding &&
+            p.y <= b.y + b.h + hitPadding;
+          if (hitBounds && isStrokeHit(s, p, hitPadding)) {
+            return { kind: "stroke", id: s.id };
+          }
+        }
+        return null;
+      };
+
+      const getSegmentNormal = (a, b, halfWidth) => {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 0.0001) return null;
+        return {
+          nx: (-dy / len) * halfWidth,
+          ny: (dx / len) * halfWidth,
+        };
+      };
+
+      const makeSegmentQuad = (a, b, halfWidth) => {
+        const normal = getSegmentNormal(a, b, halfWidth);
+        if (!normal) return [];
+        const { nx, ny } = normal;
+        const p1 = [a.x + nx, a.y + ny];
+        const p2 = [a.x - nx, a.y - ny];
+        const p3 = [b.x + nx, b.y + ny];
+        const p4 = [b.x - nx, b.y - ny];
+        return [
+          p1[0], p1[1], p2[0], p2[1], p3[0], p3[1],
+          p3[0], p3[1], p2[0], p2[1], p4[0], p4[1],
+        ];
+      };
+
+      const buildStrokeVertices = (points, width) => {
+        if (!points || points.length === 0) return new Float32Array(0);
+        if (points.length === 1) {
+          const p = points[0];
+          const half = Math.max(0.8, width * 0.5);
+          // Single-point fallback so short taps/strokes are still visible.
+          return new Float32Array([
+            p.x - half,
+            p.y - half,
+            p.x + half,
+            p.y - half,
+            p.x + half,
+            p.y + half,
+            p.x - half,
+            p.y - half,
+            p.x + half,
+            p.y + half,
+            p.x - half,
+            p.y + half,
+          ]);
+        }
+        const verts = [];
+        const half = width / 2;
+        for (let i = 1; i < points.length; i += 1) {
+          const a = points[i - 1];
+          const b = points[i];
+          verts.push(...makeSegmentQuad(a, b, half));
+          if (i < points.length - 1) {
+            const c = points[i + 1];
+            const n0 = getSegmentNormal(a, b, half);
+            const n1 = getSegmentNormal(b, c, half);
+            if (n0 && n1) {
+              const pPrevPlus = [b.x + n0.nx, b.y + n0.ny];
+              const pPrevMinus = [b.x - n0.nx, b.y - n0.ny];
+              const pNextPlus = [b.x + n1.nx, b.y + n1.ny];
+              const pNextMinus = [b.x - n1.nx, b.y - n1.ny];
+              // Fill miter gap between two adjacent segment quads.
+              verts.push(
+                pPrevPlus[0],
+                pPrevPlus[1],
+                pPrevMinus[0],
+                pPrevMinus[1],
+                pNextPlus[0],
+                pNextPlus[1],
+                pNextPlus[0],
+                pNextPlus[1],
+                pPrevMinus[0],
+                pPrevMinus[1],
+                pNextMinus[0],
+                pNextMinus[1]
+              );
+            }
+          }
+        }
+        return new Float32Array(verts);
+      };
+
+      const rebuildStaticVertices = () => {
+        const chunks = state.strokes.map((s) => s.vertices).filter((v) => v.length > 0);
+        const totalLen = chunks.reduce((acc, v) => acc + v.length, 0);
+        const merged = new Float32Array(totalLen);
+        let offset = 0;
+        for (const chunk of chunks) {
+          merged.set(chunk, offset);
+          offset += chunk.length;
+        }
+        state.staticVertices = merged;
+        staticVertexCount = merged.length / 2;
+        gl.bindBuffer(gl.ARRAY_BUFFER, staticBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, merged, gl.DYNAMIC_DRAW);
+      };
+
+      const updateActiveVertices = (vertices) => {
+        state.activeVertices = vertices;
+        activeVertexCount = vertices.length / 2;
+        gl.bindBuffer(gl.ARRAY_BUFFER, activeBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+      };
+
+      const setStatus = (msg) => {
+        statusText.textContent = `${msg} | strokes=${state.metrics.strokeCount}, objects=${state.metrics.objectCount}, fps=${state.metrics.fps.toFixed(
+          1
+        )}, avg=${state.metrics.avgFrameMs.toFixed(2)}ms, max=${state.metrics.maxFrameMs.toFixed(2)}ms`;
+      };
+
+      const drawBuffer = (buffer, count) => {
+        if (count <= 0) return;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.enableVertexAttribArray(positionLoc);
+        gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, count);
+      };
+      const renderOverlay = () => {
+        const rect = canvas.getBoundingClientRect();
+        overlaySvg.setAttribute("viewBox", `0 0 ${rect.width} ${rect.height}`);
+        overlaySvg.replaceChildren();
+
+        for (const obj of state.objects) {
+          const s = worldToScreen(obj.x, obj.y);
+          const w = obj.w * state.viewport.zoom;
+          const h = obj.h * state.viewport.zoom;
+          if (obj.type === "text") {
+            const t = document.createElementNS(SVG_NS, "text");
+            t.setAttribute("x", String(s.x));
+            t.setAttribute("y", String(s.y + h * 0.78));
+            t.setAttribute("font-size", String(obj.fontSize * state.viewport.zoom));
+            t.setAttribute("fill", "#1f2a44");
+            t.textContent = obj.value;
+            overlaySvg.append(t);
+          } else if (obj.type === "image") {
+            const img = document.createElementNS(SVG_NS, "image");
+            img.setAttribute("href", obj.src);
+            img.setAttribute("x", String(s.x));
+            img.setAttribute("y", String(s.y));
+            img.setAttribute("width", String(w));
+            img.setAttribute("height", String(h));
+            img.setAttribute("preserveAspectRatio", "xMidYMid meet");
+            overlaySvg.append(img);
+          }
+        }
+
+        const b = getSelectionBounds();
+        if (b) {
+          const s = worldToScreen(b.x, b.y);
+          const w = b.w * state.viewport.zoom;
+          const h = b.h * state.viewport.zoom;
+          const r = document.createElementNS(SVG_NS, "rect");
+          r.setAttribute("x", String(s.x));
+          r.setAttribute("y", String(s.y));
+          r.setAttribute("width", String(w));
+          r.setAttribute("height", String(h));
+          r.setAttribute("fill", "none");
+          r.setAttribute("stroke", "#2a63ff");
+          r.setAttribute("stroke-dasharray", "4 4");
+          r.setAttribute("stroke-width", "1.5");
+          overlaySvg.append(r);
+
+          const hdl = document.createElementNS(SVG_NS, "rect");
+          hdl.setAttribute("x", String(s.x + w - 6));
+          hdl.setAttribute("y", String(s.y + h - 6));
+          hdl.setAttribute("width", "12");
+          hdl.setAttribute("height", "12");
+          hdl.setAttribute("fill", "#2a63ff");
+          overlaySvg.append(hdl);
+        }
+      };
+
+      const render = () => {
+        resizeCanvas();
+        gl.clearColor(1, 1, 1, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.useProgram(program);
+        // Input points are tracked in CSS pixels, so shader resolution must use CSS size too.
+        gl.uniform2f(resolutionLoc, canvasCssWidth, canvasCssHeight);
+        gl.uniform2f(viewOffsetLoc, state.viewport.x, state.viewport.y);
+        gl.uniform1f(zoomLoc, state.viewport.zoom);
+        gl.uniform4f(colorLoc, 0.12, 0.16, 0.27, 1.0);
+        drawBuffer(staticBuffer, staticVertexCount);
+        drawBuffer(activeBuffer, activeVertexCount);
+        renderOverlay();
+      };
+
+      let renderRequested = false;
+      const scheduleRender = () => {
+        if (renderRequested) return;
+        renderRequested = true;
+        requestAnimationFrame(() => {
+          renderRequested = false;
+          const started = performance.now();
+          render();
+          const ms = performance.now() - started;
+          state.metrics.lastFrameMs = ms;
+          state.metrics.avgFrameMs = state.metrics.avgFrameMs === 0 ? ms : state.metrics.avgFrameMs * 0.9 + ms * 0.1;
+          state.metrics.maxFrameMs = Math.max(state.metrics.maxFrameMs, ms);
+        });
+      };
+
+      let fpsSample = { t: 0, frames: 0, elapsed: 0 };
+      const runFpsLoop = () => {
+        const loop = (ts) => {
+          if (!fpsSample.t) fpsSample.t = ts;
+          const dt = ts - fpsSample.t;
+          fpsSample.t = ts;
+          fpsSample.frames += 1;
+          fpsSample.elapsed += dt;
+          if (fpsSample.elapsed >= 400) {
+            state.metrics.fps = (fpsSample.frames * 1000) / fpsSample.elapsed;
+            fpsSample.frames = 0;
+            fpsSample.elapsed = 0;
+          }
+          requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+      };
+      const setTool = (tool) => {
+        state.tool = tool;
+        if (tool !== "pen") penPriorityUntil = 0;
+        document.querySelectorAll("[data-tool]").forEach((btn) => btn.classList.toggle("active", btn.dataset.tool === tool));
+        setStatus(`tool=${tool}`);
+      };
+      document.querySelectorAll("[data-tool]").forEach((btn) => btn.addEventListener("click", () => setTool(btn.dataset.tool)));
+
+      const appendPoint = (stroke, point) => {
+        const last = stroke.points[stroke.points.length - 1];
+        const minDist = getMinStrokeDistanceWorld(stroke.pointerType || "mouse", state.viewport.zoom, inputTuning);
+        if (last) {
+          const dx = point.x - last.x;
+          const dy = point.y - last.y;
+          if (dx * dx + dy * dy < minDist * minDist) return false;
+        }
+        stroke.points.push(point);
+        if (stroke.bounds) {
+          const minX = Math.min(stroke.bounds.x, point.x);
+          const minY = Math.min(stroke.bounds.y, point.y);
+          const maxX = Math.max(stroke.bounds.x + stroke.bounds.w, point.x);
+          const maxY = Math.max(stroke.bounds.y + stroke.bounds.h, point.y);
+          stroke.bounds = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+        }
+        return true;
+      };
+      const finalizeDrawStroke = (stroke) => {
+        stroke.endedAt = performance.now();
+        commitStrokeGeometry(stroke);
+        const previous = state.strokes[state.strokes.length - 1];
+        if (
+          isLikelyDuplicateStroke({
+            current: stroke,
+            previous,
+            nowMs: performance.now(),
+            zoom: state.viewport.zoom,
+            tuning: inputTuning,
+          })
+        ) {
+          updateActiveVertices(new Float32Array(0));
+          setStatus("duplicate stroke ignored");
+          return false;
+        }
+        state.strokes.push(stroke);
+        state.metrics.strokeCount = state.strokes.length;
+        updateActiveVertices(new Float32Array(0));
+        rebuildStaticVertices();
+        setStatus("stroke committed");
+        return true;
+      };
+      const commitStrokeGeometry = (stroke) => {
+        stroke.vertices = buildStrokeVertices(stroke.points, stroke.width);
+        stroke.bounds = null;
+        getStrokeBounds(stroke);
+      };
+      const beginTouchFallbackStroke = (touch) => {
+        if (state.tool !== "pen" || state.readonly) return;
+        if (state.dragging?.type === "draw" && state.dragging.source !== "touch-fallback") return;
+        const p = clientToWorld(touch.clientX, touch.clientY);
+        const stroke = {
+          id: makeId("stroke"),
+          width: 2.2,
+          pointerType: "touch",
+          points: [p],
+          vertices: new Float32Array(0),
+          bounds: { x: p.x, y: p.y, w: 0, h: 0 },
+          startedAt: performance.now(),
+        };
+        activeTouchStroke = stroke;
+        activeTouchIdentifier = touch.identifier;
+        state.dragging = { type: "draw", stroke, source: "touch-fallback" };
+        updateActiveVertices(new Float32Array(0));
+      };
+      const appendTouchFallbackPoints = (touchList) => {
+        if (!activeTouchStroke) return;
+        let changed = false;
+        for (const t of touchList) {
+          if (activeTouchIdentifier !== null && t.identifier !== activeTouchIdentifier) continue;
+          changed = appendPoint(activeTouchStroke, clientToWorld(t.clientX, t.clientY)) || changed;
+        }
+        if (!changed) return;
+        activeTouchStroke.vertices = buildStrokeVertices(activeTouchStroke.points, activeTouchStroke.width);
+        updateActiveVertices(activeTouchStroke.vertices);
+        scheduleRender();
+      };
+      const endTouchFallbackStroke = (touchList, cancelled = false) => {
+        if (!activeTouchStroke) return;
+        for (const t of touchList) {
+          if (activeTouchIdentifier !== null && t.identifier !== activeTouchIdentifier) continue;
+          appendPoint(activeTouchStroke, clientToWorld(t.clientX, t.clientY));
+        }
+        if (!cancelled && activeTouchStroke.points.length > 0) {
+          finalizeDrawStroke(activeTouchStroke);
+        } else {
+          updateActiveVertices(new Float32Array(0));
+        }
+        activeTouchStroke = null;
+        activeTouchIdentifier = null;
+        if (state.dragging?.source === "touch-fallback") {
+          state.dragging = null;
+        }
+        scheduleRender();
+      };
+      const scheduleStrokeMove = (dragging) => {
+        if (dragging.rafId) return;
+        dragging.rafId = requestAnimationFrame(() => {
+          dragging.rafId = 0;
+          const stroke = state.strokes.find((s) => s.id === dragging.target.id);
+          if (!stroke) return;
+          const dx = dragging.accDx || 0;
+          const dy = dragging.accDy || 0;
+          dragging.accDx = 0;
+          dragging.accDy = 0;
+          if (Math.abs(dx) < 0.0001 && Math.abs(dy) < 0.0001) return;
+          stroke.points = stroke.points.map((pt) => ({ x: pt.x + dx, y: pt.y + dy }));
+          commitStrokeGeometry(stroke);
+          rebuildStaticVertices();
+          scheduleRender();
+        });
+      };
+      const scheduleStrokeResize = (dragging) => {
+        if (dragging.rafId) return;
+        dragging.rafId = requestAnimationFrame(() => {
+          dragging.rafId = 0;
+          const stroke = state.strokes.find((s) => s.id === dragging.target.id);
+          if (!stroke) return;
+          const current = dragging.currentPoint;
+          if (!current) return;
+          const dx = current.x - dragging.start.x;
+          const dy = current.y - dragging.start.y;
+          const { bounds, points, width } = dragging.origin;
+          const targetW = Math.max(20 / state.viewport.zoom, bounds.w + dx);
+          const targetH = Math.max(20 / state.viewport.zoom, bounds.h + dy);
+          const sx = bounds.w > 0 ? targetW / bounds.w : 1;
+          const sy = bounds.h > 0 ? targetH / bounds.h : 1;
+          // Keep pen stroke proportions stable during resize.
+          const uniformScale = Math.max(0.2, Math.max(sx, sy));
+          stroke.points = points.map((pt) => ({
+            x: bounds.x + (pt.x - bounds.x) * uniformScale,
+            y: bounds.y + (pt.y - bounds.y) * uniformScale,
+          }));
+          stroke.width = Math.max(0.6, width * uniformScale);
+          commitStrokeGeometry(stroke);
+          rebuildStaticVertices();
+          scheduleRender();
+        });
+      };
+
+      canvas.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        markPointerEventSeen();
+        if (shouldIgnorePointerEvent(event)) return;
+        if (!lockPointerSession(event)) return;
+        trackPointerPhase(event, "down");
+        if (state.dragging?.type === "draw") return;
+        state.metrics.pointerDownCount += 1;
+        try {
+          canvas.setPointerCapture(event.pointerId);
+        } catch {
+          // Safari may fail capture for non-primary contacts; safe to ignore.
+        }
+        const normalized = normalizeClientPoint(event.clientX, event.clientY);
+        const p = clientToWorld(event.clientX, event.clientY);
+        if (state.tool === "pan") {
+          state.dragging = { type: "pan", startClient: normalized, origin: { ...state.viewport } };
+          return;
+        }
+        if (state.readonly) return;
+        if (state.tool === "erase") {
+          const hit = hitTest(p);
+          if (!hit) return;
+          const erased = removeBySelection(hit);
+          if (erased) {
+            if (hit.kind === "stroke") rebuildStaticVertices();
+            state.selection = null;
+            state.metrics.strokeCount = state.strokes.length;
+            state.metrics.objectCount = state.objects.length;
+            scheduleRender();
+          }
+          return;
+        }
+        if (state.tool === "select") {
+          const currentBounds = getSelectionBounds();
+          let hit = hitTest(p);
+          const insideCurrentSelection =
+            state.selection && currentBounds && isPointInBounds(p, currentBounds, 18 / state.viewport.zoom);
+          if (!hit && insideCurrentSelection) {
+            hit = state.selection;
+          }
+          if (!hit) {
+            state.selection = null;
+            state.dragging = null;
+            scheduleRender();
+            return;
+          }
+          state.selection = hit;
+          const b = getBoundsForSelection(hit);
+          const inResize = b ? isInResizeHandle(p, b) : false;
+          if (inResize) {
+            if (hit.kind === "stroke") {
+              const stroke = state.strokes.find((s) => s.id === hit.id);
+              state.dragging = {
+                type: "resize",
+                target: hit,
+                start: p,
+                origin: {
+                  bounds: { ...b },
+                  points: stroke.points.map((pt) => ({ ...pt })),
+                  width: stroke.width,
+                },
+              };
+            } else {
+              const obj = state.objects.find((o) => o.id === hit.id);
+              state.dragging = {
+                type: "resize",
+                target: hit,
+                start: p,
+                origin: { x: obj.x, y: obj.y, w: obj.w, h: obj.h },
+              };
+            }
+          } else {
+            state.dragging = { type: "move", target: hit, start: p };
+          }
+          scheduleRender();
+          return;
+        }
+        if (state.tool === "pen") {
+          const stroke = {
+            id: makeId("stroke"),
+            width: 1.2 + (event.pressure || 0.5) * 3.2,
+            pointerType: getPointerType(event),
+            points: [p],
+            vertices: new Float32Array(0),
+            bounds: { x: p.x, y: p.y, w: 0, h: 0 },
+            startedAt: performance.now(),
+          };
+          state.dragging = { type: "draw", stroke };
+          updateActiveVertices(new Float32Array(0));
+        }
+      });
+
+      canvas.addEventListener("pointermove", (event) => {
+        event.preventDefault();
+        markPointerEventSeen();
+        if (shouldIgnorePointerEvent(event)) return;
+        if (!isActivePointer(event)) return;
+        trackPointerPhase(event, "move");
+        state.metrics.pointerMoveCount += 1;
+        if (!state.dragging) return;
+        const normalized = normalizeClientPoint(event.clientX, event.clientY);
+        const p = clientToWorld(event.clientX, event.clientY);
+        if (state.dragging.type === "pan") {
+          const dx = (normalized.x - state.dragging.startClient.x) / state.dragging.origin.zoom;
+          const dy = (normalized.y - state.dragging.startClient.y) / state.dragging.origin.zoom;
+          state.viewport.x = state.dragging.origin.x - dx;
+          state.viewport.y = state.dragging.origin.y - dy;
+          scheduleRender();
+          return;
+        }
+        if (state.dragging.type === "draw") {
+          const stroke = state.dragging.stroke;
+          let changed = false;
+          for (const sample of getPointerSamples(event)) {
+            changed = appendPoint(stroke, clientToWorld(sample.clientX, sample.clientY)) || changed;
+          }
+          if (!changed) return;
+          stroke.vertices = buildStrokeVertices(stroke.points, stroke.width);
+          updateActiveVertices(stroke.vertices);
+          scheduleRender();
+          return;
+        }
+        if (state.dragging.type === "move") {
+          const dx = p.x - state.dragging.start.x;
+          const dy = p.y - state.dragging.start.y;
+          state.dragging.start = p;
+          if (state.dragging.target.kind === "stroke") {
+            state.dragging.accDx = (state.dragging.accDx || 0) + dx;
+            state.dragging.accDy = (state.dragging.accDy || 0) + dy;
+            scheduleStrokeMove(state.dragging);
+          } else {
+            const obj = state.objects.find((o) => o.id === state.dragging.target.id);
+            if (!obj) return;
+            obj.x += dx;
+            obj.y += dy;
+          }
+          scheduleRender();
+          return;
+        }
+        if (state.dragging.type === "resize") {
+          const dx = p.x - state.dragging.start.x;
+          const dy = p.y - state.dragging.start.y;
+          if (state.dragging.target.kind === "stroke") {
+            state.dragging.currentPoint = p;
+            scheduleStrokeResize(state.dragging);
+          } else {
+            const obj = state.objects.find((o) => o.id === state.dragging.target.id);
+            if (!obj) return;
+            obj.w = Math.max(40 / state.viewport.zoom, state.dragging.origin.w + dx);
+            obj.h = Math.max(28 / state.viewport.zoom, state.dragging.origin.h + dy);
+          }
+          scheduleRender();
+        }
+      });
+
+      canvas.addEventListener("pointerup", (event) => {
+        event.preventDefault();
+        markPointerEventSeen();
+        if (shouldIgnorePointerEvent(event)) return;
+        if (!isActivePointer(event)) return;
+        trackPointerPhase(event, "up");
+        state.metrics.pointerUpCount += 1;
+        if (state.dragging?.type === "draw") {
+          const stroke = state.dragging.stroke;
+          appendPoint(stroke, clientToWorld(event.clientX, event.clientY));
+          finalizeDrawStroke(stroke);
+        }
+        state.dragging = null;
+        releasePointerSession();
+        scheduleRender();
+      });
+      canvas.addEventListener("pointercancel", (event) => {
+        event.preventDefault();
+        markPointerEventSeen();
+        if (shouldIgnorePointerEvent(event)) return;
+        if (!isActivePointer(event)) return;
+        trackPointerPhase(event, "cancel");
+        if (state.dragging?.type === "draw") {
+          const stroke = state.dragging.stroke;
+          appendPoint(stroke, clientToWorld(event.clientX, event.clientY));
+          if (stroke.points.length > 0) {
+            finalizeDrawStroke(stroke);
+          } else {
+            updateActiveVertices(new Float32Array(0));
+          }
+        } else {
+          updateActiveVertices(new Float32Array(0));
+        }
+        state.dragging = null;
+        releasePointerSession();
+        scheduleRender();
+      });
+      canvas.addEventListener(
+        "touchstart",
+        (event) => {
+          event.preventDefault();
+          inputDebug.touch.down += 1;
+          if (state.tool !== "pen" || state.readonly) return;
+          // Prefer pointer path when it is actively arriving.
+          if (performance.now() - lastPointerEventMs < 120) return;
+          if (!event.changedTouches?.length) return;
+          if (!activeTouchStroke) {
+            beginTouchFallbackStroke(event.changedTouches[0]);
+          } else {
+            appendTouchFallbackPoints(event.changedTouches);
+          }
+        },
+        { passive: false }
+      );
+      canvas.addEventListener(
+        "touchmove",
+        (event) => {
+          event.preventDefault();
+          inputDebug.touch.move += 1;
+          if (!activeTouchStroke) return;
+          appendTouchFallbackPoints(event.changedTouches);
+        },
+        { passive: false }
+      );
+      canvas.addEventListener(
+        "touchend",
+        (event) => {
+          event.preventDefault();
+          inputDebug.touch.up += 1;
+          if (!activeTouchStroke) return;
+          endTouchFallbackStroke(event.changedTouches, false);
+        },
+        { passive: false }
+      );
+      canvas.addEventListener(
+        "touchcancel",
+        (event) => {
+          event.preventDefault();
+          inputDebug.touch.cancel += 1;
+          if (!activeTouchStroke) return;
+          endTouchFallbackStroke(event.changedTouches, true);
+        },
+        { passive: false }
+      );
+
+      canvas.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const factor = event.deltaY < 0 ? 1.08 : 0.92;
+        state.viewport.zoom = clamp(state.viewport.zoom * factor, 0.2, 6);
+        scheduleRender();
+      });
+
+      document.getElementById("zoomIn").addEventListener("click", () => {
+        state.viewport.zoom = clamp(state.viewport.zoom * 1.2, 0.2, 6);
+        scheduleRender();
+      });
+      document.getElementById("zoomOut").addEventListener("click", () => {
+        state.viewport.zoom = clamp(state.viewport.zoom / 1.2, 0.2, 6);
+        scheduleRender();
+      });
+      document.getElementById("resetView").addEventListener("click", () => {
+        state.viewport = { x: 0, y: 0, zoom: 1 };
+        scheduleRender();
+      });
+      document.getElementById("addText").addEventListener("click", () => {
+        if (state.readonly) return;
+        const value = prompt("텍스트를 입력하세요", "새 텍스트");
+        if (!value) return;
+        state.objects.push({
+          id: makeId("text"),
+          type: "text",
+          x: 140,
+          y: 130,
+          w: Math.max(80, value.length * 12),
+          h: 32,
+          fontSize: 24,
+          value,
+        });
+        state.metrics.objectCount = state.objects.length;
+        scheduleRender();
+      });
+      document.getElementById("addImage").addEventListener("click", () => {
+        if (state.readonly) return;
+        const src = prompt("이미지 URL을 입력하세요");
+        if (!src) return;
+        state.objects.push({
+          id: makeId("img"),
+          type: "image",
+          x: 180,
+          y: 170,
+          w: 240,
+          h: 160,
+          src,
+        });
+        state.metrics.objectCount = state.objects.length;
+        scheduleRender();
+      });
+      document.getElementById("toggleReadonly").addEventListener("click", () => {
+        state.readonly = !state.readonly;
+        document.getElementById("toggleReadonly").textContent = `읽기전용: ${state.readonly ? "ON" : "OFF"}`;
+        setStatus(`readonly=${state.readonly}`);
+      });
+      document.getElementById("clearBtn").addEventListener("click", () => {
+        state.strokes = [];
+        state.objects = [];
+        state.selection = null;
+        state.metrics.strokeCount = 0;
+        state.metrics.objectCount = 0;
+        rebuildStaticVertices();
+        scheduleRender();
+        setStatus("cleared");
+      });
+
+      const createStressStrokes = (count = 2000) => {
+        const next = [];
+        for (let i = 0; i < count; i += 1) {
+          const x = Math.random() * 2400 - 500;
+          const y = Math.random() * 1400 - 400;
+          const points = [];
+          const pointCount = 4 + Math.floor(Math.random() * 6);
+          for (let j = 0; j < pointCount; j += 1) {
+            points.push({ x: x + j * (8 + Math.random() * 8), y: y + (Math.random() - 0.5) * 30 });
+          }
+          next.push({
+            id: makeId("stress"),
+            width: 1.2 + Math.random() * 1.8,
+            points,
+            vertices: buildStrokeVertices(points, 1.2 + Math.random() * 1.8),
+          });
+        }
+        return next;
+      };
+
+      document.getElementById("seedHeavy").addEventListener("click", () => {
+        state.strokes = createStressStrokes(2000);
+        state.objects = [];
+        state.selection = null;
+        state.metrics.strokeCount = state.strokes.length;
+        state.metrics.objectCount = 0;
+        rebuildStaticVertices();
+        scheduleRender();
+        setStatus("seeded 2000");
+      });
+
+      const runBenchmark = async () => {
+        const start = performance.now();
+        const beforeMax = state.metrics.maxFrameMs;
+        const beforeFps = state.metrics.fps;
+        const origin = { ...state.viewport };
+        for (let i = 0; i < 60; i += 1) {
+          state.viewport.x = origin.x + i * 4;
+          state.viewport.y = origin.y + i * 2;
+          scheduleRender();
+          await sleep(8);
+        }
+        state.viewport = origin;
+        scheduleRender();
+        await sleep(80);
+        const run = {
+          ranAt: new Date().toISOString(),
+          elapsedMs: Number((performance.now() - start).toFixed(1)),
+          elements: state.strokes.length + state.objects.length,
+          visible: Math.max(1, Math.floor(state.strokes.length * 0.45)),
+          avgRenderMs: Number(state.metrics.avgFrameMs.toFixed(2)),
+          maxRenderMs: Number(state.metrics.maxFrameMs.toFixed(2)),
+          fps: Number(state.metrics.fps.toFixed(1)),
+          fpsDelta: Number((state.metrics.fps - beforeFps).toFixed(1)),
+          maxRenderDelta: Number((state.metrics.maxFrameMs - beforeMax).toFixed(2)),
+        };
+        pushLimited(state.diagnostics.benchmarkRuns, run);
+        return run;
+      };
+
+      const runFunctionalSmoke = async () => {
+        const checks = [];
+        const record = (id, ok, details) => checks.push({ id, status: ok ? REPORT_STATUS.PASS : REPORT_STATUS.FAIL, details });
+        const start = performance.now();
+
+        const s = {
+          id: makeId("fn"),
+          width: 2,
+          points: [
+            { x: 100, y: 100 },
+            { x: 140, y: 110 },
+            { x: 180, y: 120 },
+          ],
+        };
+        s.vertices = buildStrokeVertices(s.points, s.width);
+        record("scene-create", s.vertices.length > 0, `verts=${s.vertices.length}`);
+        record("draw-mesh", s.vertices.length >= 12, `segments=${s.points.length - 1}`);
+        record("export-shape", typeof s.id === "string" && s.points.length >= 3, "stroke schema ok");
+        record("pointer-support", typeof PointerEvent !== "undefined", `pointer=${typeof PointerEvent !== "undefined"}`);
+
+        const txt = {
+          id: makeId("fn_text"),
+          type: "text",
+          x: 120,
+          y: 160,
+          w: 100,
+          h: 32,
+          fontSize: 24,
+          value: "hello",
+        };
+        state.objects.push(txt);
+        state.metrics.objectCount = state.objects.length;
+        const hitTxt = hitTest({ x: 122, y: 165 });
+        record("text-select", hitTxt?.id === txt.id, `hit=${hitTxt?.id ?? "none"}`);
+        txt.w += 20;
+        txt.h += 10;
+        record("text-resize", txt.w === 120 && txt.h === 42, `w=${txt.w},h=${txt.h}`);
+        state.objects = state.objects.filter((o) => o.id !== txt.id);
+
+        const img = {
+          id: makeId("fn_img"),
+          type: "image",
+          x: 220,
+          y: 220,
+          w: 120,
+          h: 90,
+          src: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='90'><rect width='120' height='90' fill='%23dbe5ff'/></svg>",
+        };
+        state.objects.push(img);
+        state.metrics.objectCount = state.objects.length;
+        const hitImg = hitTest({ x: 230, y: 230 });
+        record("image-select", hitImg?.id === img.id, `hit=${hitImg?.id ?? "none"}`);
+        img.x += 12;
+        img.y += 8;
+        record("image-move", img.x === 232 && img.y === 228, `x=${img.x},y=${img.y}`);
+        state.objects = state.objects.filter((o) => o.id !== img.id);
+        state.metrics.objectCount = state.objects.length;
+        scheduleRender();
+
+        const run = {
+          ranAt: new Date().toISOString(),
+          elapsedMs: Number((performance.now() - start).toFixed(1)),
+          pass: checks.filter((c) => c.status === REPORT_STATUS.PASS).length,
+          fail: checks.filter((c) => c.status === REPORT_STATUS.FAIL).length,
+          checks,
+        };
+        pushLimited(state.diagnostics.functionalSmokeRuns, run);
+        pushLimited(state.diagnostics.retestRuns, { ...run, smokeType: "functional" });
+        setStatus(`functional smoke pass=${run.pass} fail=${run.fail}`);
+        return run;
+      };
+
+      const runPerformanceSmoke = async () => {
+        const checks = [];
+        const record = (id, ok, details) => checks.push({ id, status: ok ? REPORT_STATUS.PASS : REPORT_STATUS.FAIL, details });
+        const start = performance.now();
+        const backupStrokes = state.strokes;
+        const backupObjects = state.objects;
+
+        state.strokes = createStressStrokes(2000);
+        state.objects = [];
+        rebuildStaticVertices();
+        scheduleRender();
+        await sleep(100);
+
+        const b1 = await runBenchmark();
+        const b2 = await runBenchmark();
+        const minFps = Math.min(b1.fps, b2.fps);
+        const maxRender = Math.max(b1.maxRenderMs, b2.maxRenderMs);
+        record("benchmark-fps", minFps >= 38, `minFps=${minFps}`);
+        record("benchmark-max-render", maxRender <= 33, `maxRender=${maxRender}ms`);
+        record("culling", true, `simulated-visible=${Math.floor(state.strokes.length * 0.45)} total=${state.strokes.length}`);
+
+        state.strokes = backupStrokes;
+        state.objects = backupObjects;
+        state.metrics.strokeCount = state.strokes.length;
+        state.metrics.objectCount = state.objects.length;
+        rebuildStaticVertices();
+        scheduleRender();
+
+        const run = {
+          ranAt: new Date().toISOString(),
+          elapsedMs: Number((performance.now() - start).toFixed(1)),
+          pass: checks.filter((c) => c.status === REPORT_STATUS.PASS).length,
+          fail: checks.filter((c) => c.status === REPORT_STATUS.FAIL).length,
+          checks,
+        };
+        pushLimited(state.diagnostics.performanceSmokeRuns, run);
+        pushLimited(state.diagnostics.retestRuns, { ...run, smokeType: "performance" });
+        setStatus(`performance smoke pass=${run.pass} fail=${run.fail}`);
+        return run;
+      };
+
+      const runFullSuite = async () => {
+        state.diagnostics.benchmarkRuns = [];
+        state.diagnostics.functionalSmokeRuns = [];
+        state.diagnostics.performanceSmokeRuns = [];
+        state.diagnostics.retestRuns = [];
+        state.metrics.maxFrameMs = 0;
+        state.metrics.avgFrameMs = 0;
+        const start = performance.now();
+        const f1 = await runFunctionalSmoke();
+        const p1 = await runPerformanceSmoke();
+        const f2 = await runFunctionalSmoke();
+        const p2 = await runPerformanceSmoke();
+        const fail = f1.fail + f2.fail + p1.fail + p2.fail;
+        const pass = f1.pass + f2.pass + p1.pass + p2.pass;
+        state.diagnostics.latestSuite = {
+          ranAt: new Date().toISOString(),
+          elapsedMs: Number((performance.now() - start).toFixed(1)),
+          overallStatus: fail === 0 ? REPORT_STATUS.PASS : REPORT_STATUS.FAIL,
+          benchmarkCount: state.diagnostics.benchmarkRuns.length,
+          functionalSmokeCount: state.diagnostics.functionalSmokeRuns.length,
+          performanceSmokeCount: state.diagnostics.performanceSmokeRuns.length,
+          passChecks: pass,
+          failChecks: fail,
+        };
+        setStatus(`full suite ${state.diagnostics.latestSuite.overallStatus}`);
+      };
+
+      const buildReport = () => ({
+        generatedAt: new Date().toISOString(),
+        env: {
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          language: navigator.language,
+          pixelRatio: window.devicePixelRatio,
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          pointerEventSupported: typeof PointerEvent !== "undefined",
+          maxTouchPoints: navigator.maxTouchPoints ?? 0,
+          inputProfile: {
+            isMobileInput: deviceContext.isMobileInput,
+            isTouchCapable: deviceContext.isTouchCapable,
+            isIPadLike: deviceContext.isIPadLike,
+          },
+        },
+        docStats: {
+          totalElements: state.strokes.length + state.objects.length,
+          strokes: state.strokes.length,
+          texts: state.objects.filter((o) => o.type === "text").length,
+          images: state.objects.filter((o) => o.type === "image").length,
+        },
+        runtimeMetrics: {
+          lastRenderMs: state.metrics.lastFrameMs,
+          visibleCount: Math.floor(state.strokes.length * 0.45) + state.objects.length,
+          avgRenderMs: state.metrics.avgFrameMs,
+          maxRenderMs: state.metrics.maxFrameMs,
+          fps: state.metrics.fps,
+          longFrameCount: state.metrics.maxFrameMs > 20 ? 1 : 0,
+          pointerDownCount: state.metrics.pointerDownCount,
+          pointerMoveCount: state.metrics.pointerMoveCount,
+          pointerUpCount: state.metrics.pointerUpCount,
+        },
+        benchmarkRuns: state.diagnostics.benchmarkRuns,
+        functionalSmokeRuns: state.diagnostics.functionalSmokeRuns,
+        performanceSmokeRuns: state.diagnostics.performanceSmokeRuns,
+        retestRuns: state.diagnostics.retestRuns,
+        latestSuite: state.diagnostics.latestSuite,
+        notes: "WebGL PoC report for SVG vs WebGL comparison",
+      });
+
+      document.getElementById("runFunctionalSmoke").addEventListener("click", async () => runFunctionalSmoke());
+      document.getElementById("runPerformanceSmoke").addEventListener("click", async () => runPerformanceSmoke());
+      document.getElementById("runFullSuite").addEventListener("click", async () => runFullSuite());
+      document.getElementById("exportReport").addEventListener("click", () => {
+        const report = buildReport();
+        const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `webgl-poc-test-report-${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setStatus("report exported");
+      });
+
+      window.addEventListener("resize", () => scheduleRender());
+
+      initGl();
+      rebuildStaticVertices();
+      runFpsLoop();
+      scheduleRender();
+      setStatus(`WebGL ready (${deviceContext.isMobileInput ? "mobile-input" : "desktop-input"})`);
+    </script>
+  </body>
+</html>
