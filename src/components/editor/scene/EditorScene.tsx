@@ -44,11 +44,26 @@ import { WebGLObjectMesh } from './WebGLObjectMesh';
 
 const editorPointerPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 const activeExamObjectId = 'object_exam_active';
+const cameraFitPadding = 0.98;
+const maxOrthographicZoomScale = 4;
 
 function clampPointToBounds(point: Point2D, bounds: PointBounds) {
   return {
     x: THREE.MathUtils.clamp(point.x, bounds.minX, bounds.maxX),
     y: THREE.MathUtils.clamp(point.y, bounds.minY, bounds.maxY),
+  };
+}
+
+function getOrthographicFitZoom(camera: THREE.OrthographicCamera, bounds: PointBounds) {
+  const frustumWidth = camera.right - camera.left;
+  const frustumHeight = camera.top - camera.bottom;
+  return Math.min(frustumWidth / bounds.width, frustumHeight / bounds.height) * cameraFitPadding;
+}
+
+function getOrthographicVisibleSize(camera: THREE.OrthographicCamera) {
+  return {
+    width: (camera.right - camera.left) / Math.max(camera.zoom, 0.001),
+    height: (camera.top - camera.bottom) / Math.max(camera.zoom, 0.001),
   };
 }
 
@@ -127,6 +142,16 @@ export function EditorScene({
   const drawingBoundsKey = drawingBounds
     ? `${drawingBounds.minX}:${drawingBounds.maxX}:${drawingBounds.minY}:${drawingBounds.maxY}`
     : 'none';
+  const cameraZoomLimits = useMemo(() => {
+    if (!drawingBounds || size.width <= 0 || size.height <= 0) {
+      return { min: 0.45, max: 4 };
+    }
+    const fitZoom = Math.min(size.width / drawingBounds.width, size.height / drawingBounds.height) * cameraFitPadding;
+    return {
+      min: fitZoom,
+      max: fitZoom * maxOrthographicZoomScale,
+    };
+  }, [drawingBounds, size.height, size.width]);
   const interactionBounds =
     drawingBounds ?? {
       minX: -50,
@@ -147,10 +172,42 @@ export function EditorScene({
     (fitToBounds = false) => {
       const bounds = drawingBoundsRef.current;
       if (!bounds || size.width <= 0 || size.height <= 0) return;
-      if (!(camera instanceof THREE.PerspectiveCamera)) return;
       if (isClampingCameraRef.current) return;
 
       const controls = controlsRef.current;
+      if (camera instanceof THREE.OrthographicCamera) {
+        const fitZoom = getOrthographicFitZoom(camera, bounds);
+        const nextZoom = fitToBounds
+          ? fitZoom
+          : THREE.MathUtils.clamp(camera.zoom, fitZoom, fitZoom * maxOrthographicZoomScale);
+
+        camera.zoom = nextZoom;
+        const visibleSize = getOrthographicVisibleSize(camera);
+        const halfWidth = visibleSize.width / 2;
+        const halfHeight = visibleSize.height / 2;
+        const currentTarget = controls?.target ?? new THREE.Vector3(bounds.centerX, bounds.centerY, 0);
+        const nextTarget = new THREE.Vector3(
+          fitToBounds || visibleSize.width >= bounds.width
+            ? bounds.centerX
+            : THREE.MathUtils.clamp(currentTarget.x, bounds.minX + halfWidth, bounds.maxX - halfWidth),
+          fitToBounds || visibleSize.height >= bounds.height
+            ? bounds.centerY
+            : THREE.MathUtils.clamp(currentTarget.y, bounds.minY + halfHeight, bounds.maxY - halfHeight),
+          0,
+        );
+
+        isClampingCameraRef.current = true;
+        controls?.target.copy(nextTarget);
+        camera.position.set(nextTarget.x, nextTarget.y, 7);
+        camera.lookAt(nextTarget);
+        camera.updateProjectionMatrix();
+        controls?.update();
+        isClampingCameraRef.current = false;
+        return;
+      }
+
+      if (!(camera instanceof THREE.PerspectiveCamera)) return;
+
       const aspect = size.width / size.height;
       const fov = THREE.MathUtils.degToRad(camera.fov);
       const fitDistance = Math.max(
@@ -207,7 +264,11 @@ export function EditorScene({
       return;
     }
 
-    camera.zoom = THREE.MathUtils.clamp(camera.zoom * zoomCommand.factor, 0.45, 4);
+    if (camera instanceof THREE.OrthographicCamera) {
+      camera.zoom *= zoomCommand.factor;
+    } else {
+      camera.zoom = THREE.MathUtils.clamp(camera.zoom * zoomCommand.factor, 0.45, 4);
+    }
     camera.updateProjectionMatrix();
     clampCameraToDrawingBounds(false);
   }, [camera, clampCameraToDrawingBounds, drawingBounds?.centerX, drawingBounds?.centerY, zoomCommand]);
@@ -467,6 +528,8 @@ export function EditorScene({
         enableZoom={Boolean(drawingBounds)}
         minDistance={0.65}
         maxDistance={80}
+        minZoom={cameraZoomLimits.min}
+        maxZoom={cameraZoomLimits.max}
         onChange={() => clampCameraToDrawingBounds(false)}
         mouseButtons={{
           LEFT: tool === 'pan' ? THREE.MOUSE.PAN : undefined,

@@ -1,3 +1,4 @@
+import { OrthographicCamera } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import type { CSSProperties } from "react";
 import type { ExamPreset } from "../../data/examPresets";
@@ -43,9 +44,15 @@ export function EditorStage({
         <div className="stage-canvas-shell">
           <Canvas
             className="stage-canvas"
-            camera={{ position: [0, 0, 7], fov: 45, near: 0.1, far: 100 }}
             dpr={[1, 2]}
           >
+            <OrthographicCamera
+              makeDefault
+              position={[0, 0, 7]}
+              zoom={120}
+              near={0.1}
+              far={100}
+            />
             <color attach="background" args={["#ffffff"]} />
             <ambientLight intensity={1.4} />
             <EditorScene {...sceneProps} />
