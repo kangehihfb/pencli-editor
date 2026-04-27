@@ -1,4 +1,4 @@
-import { OrbitControls } from '@react-three/drei';
+import { Html, OrbitControls } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -47,6 +47,44 @@ const activeExamObjectId = 'object_exam_active';
 const cameraFitPadding = 0.98;
 const maxOrthographicZoomScale = 4;
 
+type CoordinateDebugSnapshot = {
+  phase: 'down' | 'move' | 'up';
+  pointerId: number;
+  pointerType: string;
+  buttons: number;
+  pressure: number;
+  client: Point2D;
+  canvasPoint: Point2D;
+  ndc: Point2D;
+  worldFromClient: Point2D | null;
+  worldFromR3f: Point2D;
+  worldDelta: Point2D | null;
+  clientMarker: Point2D;
+  r3fMarker: Point2D | null;
+  drawingInside: boolean | null;
+  rect: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
+  buffer: {
+    width: number;
+    height: number;
+    dpr: number;
+  };
+  camera: {
+    kind: string;
+    zoom: number;
+    x: number;
+    y: number;
+    z: number;
+  };
+  capturedPointerId: number | null;
+  captured: boolean;
+  r3fEventCompute: 'client-rect';
+};
+
 function clampPointToBounds(point: Point2D, bounds: PointBounds) {
   return {
     x: THREE.MathUtils.clamp(point.x, bounds.minX, bounds.maxX),
@@ -65,6 +103,11 @@ function getOrthographicVisibleSize(camera: THREE.OrthographicCamera) {
     width: (camera.right - camera.left) / Math.max(camera.zoom, 0.001),
     height: (camera.top - camera.bottom) / Math.max(camera.zoom, 0.001),
   };
+}
+
+function formatDebugNumber(value: number | null | undefined, digits = 2) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
+  return value.toFixed(digits);
 }
 
 export type EditorSceneProps = {
@@ -138,7 +181,9 @@ export function EditorScene({
   const drawingBoundsRef = useRef(drawingBounds);
   const isClampingCameraRef = useRef(false);
   const [marqueeState, setMarqueeState] = useState<MarqueeState>(null);
+  const [coordinateDebug, setCoordinateDebug] = useState<CoordinateDebugSnapshot | null>(null);
   const isDrawingRef = useRef(false);
+  const activePointerIdRef = useRef<number | null>(null);
   const lastObjectClickRef = useRef<{ id: string; time: number } | null>(null);
   const groupBounds = useMemo(() => getSelectionItemsBounds(groupSelection, strokes, objects), [groupSelection, objects, strokes]);
   const drawingBoundsKey = drawingBounds
@@ -294,12 +339,125 @@ export function EditorScene({
       );
       const point = new THREE.Vector3();
       const raycaster = pointerRaycasterRef.current;
+      camera.updateMatrixWorld();
       raycaster.setFromCamera(pointer, camera);
       const hit = raycaster.ray.intersectPlane(editorPointerPlane, point);
       if (!hit) return null;
       return { x: point.x, y: point.y };
     },
     [camera, gl.domElement],
+  );
+  const getPointerPointFromEvent = useCallback(
+    (event: ThreeEvent<PointerEvent>) =>
+      getPointerPointFromClient(event.nativeEvent) ?? getEditorPointerPoint(event),
+    [getPointerPointFromClient],
+  );
+  const capturePointer = useCallback(
+    (event: ThreeEvent<PointerEvent>) => {
+      const pointerId = event.nativeEvent.pointerId;
+      if (gl.domElement.hasPointerCapture?.(pointerId)) return;
+      gl.domElement.setPointerCapture?.(pointerId);
+      activePointerIdRef.current = pointerId;
+    },
+    [gl.domElement],
+  );
+  const releasePointer = useCallback(
+    (event: ThreeEvent<PointerEvent>) => {
+      const pointerId = event.nativeEvent.pointerId;
+      if (!gl.domElement.hasPointerCapture?.(pointerId)) return;
+      gl.domElement.releasePointerCapture?.(pointerId);
+      if (activePointerIdRef.current === pointerId) {
+        activePointerIdRef.current = null;
+      }
+    },
+    [gl.domElement],
+  );
+  const releaseActivePointer = useCallback(() => {
+    const pointerId = activePointerIdRef.current;
+    if (pointerId === null) return;
+    if (gl.domElement.hasPointerCapture?.(pointerId)) {
+      gl.domElement.releasePointerCapture?.(pointerId);
+    }
+    activePointerIdRef.current = null;
+  }, [gl.domElement]);
+  const getCanvasPointFromWorld = useCallback(
+    (point: Point2D) => {
+      const rect = gl.domElement.getBoundingClientRect();
+      const projected = new THREE.Vector3(point.x, point.y, 0).project(camera);
+      return {
+        x: ((projected.x + 1) / 2) * rect.width,
+        y: ((-projected.y + 1) / 2) * rect.height,
+      };
+    },
+    [camera, gl.domElement],
+  );
+  const updateCoordinateDebug = useCallback(
+    (event: ThreeEvent<PointerEvent>, phase: CoordinateDebugSnapshot['phase']) => {
+      const nativeEvent = event.nativeEvent;
+      const rect = gl.domElement.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+
+      const canvasPoint = {
+        x: nativeEvent.clientX - rect.left,
+        y: nativeEvent.clientY - rect.top,
+      };
+      const ndc = {
+        x: (canvasPoint.x / rect.width) * 2 - 1,
+        y: -((canvasPoint.y / rect.height) * 2 - 1),
+      };
+      const worldFromClient = getPointerPointFromClient(nativeEvent);
+      const worldFromR3f = getEditorPointerPoint(event);
+      const worldDelta = worldFromClient
+        ? {
+            x: worldFromClient.x - worldFromR3f.x,
+            y: worldFromClient.y - worldFromR3f.y,
+          }
+        : null;
+      const r3fMarker = worldFromR3f ? getCanvasPointFromWorld(worldFromR3f) : null;
+      const pointerId = nativeEvent.pointerId;
+
+      setCoordinateDebug({
+        phase,
+        pointerId,
+        pointerType: nativeEvent.pointerType || 'mouse',
+        buttons: nativeEvent.buttons,
+        pressure: nativeEvent.pressure,
+        client: {
+          x: nativeEvent.clientX,
+          y: nativeEvent.clientY,
+        },
+        canvasPoint,
+        ndc,
+        worldFromClient,
+        worldFromR3f,
+        worldDelta,
+        clientMarker: canvasPoint,
+        r3fMarker,
+        drawingInside: worldFromClient && drawingBounds ? isPointInBounds(worldFromClient, drawingBounds) : null,
+        rect: {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        },
+        buffer: {
+          width: gl.domElement.width,
+          height: gl.domElement.height,
+          dpr: window.devicePixelRatio || 1,
+        },
+        camera: {
+          kind: camera instanceof THREE.OrthographicCamera ? 'orthographic' : 'perspective',
+          zoom: camera.zoom,
+          x: camera.position.x,
+          y: camera.position.y,
+          z: camera.position.z,
+        },
+        capturedPointerId: activePointerIdRef.current,
+        captured: gl.domElement.hasPointerCapture?.(pointerId) ?? false,
+        r3fEventCompute: 'client-rect',
+      });
+    },
+    [camera, drawingBounds, getCanvasPointFromWorld, getPointerPointFromClient, gl.domElement],
   );
 
   const getBoundedPoint = useCallback((point: Point2D) => (drawingBounds ? clampPointToBounds(point, drawingBounds) : point), [drawingBounds]);
@@ -333,14 +491,21 @@ export function EditorScene({
         isDrawingRef.current = false;
         onEndStroke();
       }
+      releaseActivePointer();
       onDragStateChange(null);
       onResizeStateChange(null);
       setMarqueeState(null);
     };
 
     window.addEventListener('pointerup', stopPointerWork);
-    return () => window.removeEventListener('pointerup', stopPointerWork);
-  }, [onDragStateChange, onEndStroke, onResizeStateChange]);
+    window.addEventListener('pointercancel', stopPointerWork);
+    window.addEventListener('blur', stopPointerWork);
+    return () => {
+      window.removeEventListener('pointerup', stopPointerWork);
+      window.removeEventListener('pointercancel', stopPointerWork);
+      window.removeEventListener('blur', stopPointerWork);
+    };
+  }, [onDragStateChange, onEndStroke, onResizeStateChange, releaseActivePointer]);
 
   useEffect(() => {
     if (!resizeState || readonly) return;
@@ -355,7 +520,7 @@ export function EditorScene({
     return () => window.removeEventListener('pointermove', handlePointerMove);
   }, [getBoundedPoint, getPointerPointFromClient, readonly, resizeState, updateResize]);
 
-  const toPoint = getEditorPointerPoint;
+  const toPoint = getPointerPointFromEvent;
 
   const setSelectionItems = (items: SelectionItem[]) => {
     onGroupSelectionChange(items);
@@ -545,6 +710,7 @@ export function EditorScene({
         name="editor:interaction-plane"
         position={[interactionBounds.centerX, interactionBounds.centerY, -0.4]}
         onPointerDown={(event) => {
+          updateCoordinateDebug(event, 'down');
           const rawPoint = toPoint(event);
           const point = getBoundedPoint(rawPoint);
           if (readonly) return;
@@ -553,7 +719,7 @@ export function EditorScene({
             if (drawingBounds && !isPointInBounds(rawPoint, drawingBounds)) return;
             event.stopPropagation();
             isDrawingRef.current = true;
-            (event.target as unknown as Element | null)?.setPointerCapture?.(event.pointerId);
+            capturePointer(event);
             onBeginStroke(point);
             return;
           }
@@ -565,7 +731,7 @@ export function EditorScene({
             if (selectFromIntersections(event, true)) return;
 
             event.stopPropagation();
-            (event.target as unknown as Element | null)?.setPointerCapture?.(event.pointerId);
+            capturePointer(event);
             onDragStateChange(null);
             onResizeStateChange(null);
             setMarqueeState({ start: point, current: point });
@@ -573,12 +739,14 @@ export function EditorScene({
           }
         }}
         onPointerMove={(event) => {
+          updateCoordinateDebug(event, 'move');
           const rawPoint = toPoint(event);
           const point = getBoundedPoint(rawPoint);
 
           if (tool === 'pen' && isDrawingRef.current) {
             if (drawingBounds && !isPointInBounds(rawPoint, drawingBounds)) {
               isDrawingRef.current = false;
+              releasePointer(event);
               onEndStroke();
               return;
             }
@@ -623,10 +791,11 @@ export function EditorScene({
           onMoveObject(dragState.id, point, dragState.offset);
         }}
         onPointerUp={(event) => {
+          updateCoordinateDebug(event, 'up');
           if (tool === 'pen' && isDrawingRef.current) {
             event.stopPropagation();
             isDrawingRef.current = false;
-            (event.target as unknown as Element | null)?.releasePointerCapture?.(event.pointerId);
+            releasePointer(event);
             onEndStroke();
           }
           onDragStateChange(null);
@@ -709,6 +878,109 @@ export function EditorScene({
       ) : null}
 
       {marqueeState ? <MarqueeFrame name="selection:marquee" bounds={getBoundsFromPoints(marqueeState.start, marqueeState.current)} /> : null}
+
+      <Html fullscreen zIndexRange={[20, 0]} prepend={false}>
+        <div className="coordinate-debug-overlay" aria-hidden="true">
+          {coordinateDebug ? (
+            <>
+              <div
+                className="coordinate-debug-crosshair client"
+                style={{
+                  transform: `translate(${coordinateDebug.clientMarker.x}px, ${coordinateDebug.clientMarker.y}px)`,
+                }}
+              />
+              {coordinateDebug.r3fMarker ? (
+                <div
+                  className="coordinate-debug-crosshair r3f"
+                  style={{
+                    transform: `translate(${coordinateDebug.r3fMarker.x}px, ${coordinateDebug.r3fMarker.y}px)`,
+                  }}
+                />
+              ) : null}
+              <div className="coordinate-debug-panel">
+                <strong>좌표 디버그</strong>
+                <dl>
+                  <div>
+                    <dt>phase/tool</dt>
+                    <dd>{coordinateDebug.phase} / {tool}</dd>
+                  </div>
+                  <div>
+                    <dt>pointer</dt>
+                    <dd>
+                      {coordinateDebug.pointerType} #{coordinateDebug.pointerId} b{coordinateDebug.buttons} p{formatDebugNumber(coordinateDebug.pressure, 3)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>client</dt>
+                    <dd>{formatDebugNumber(coordinateDebug.client.x)}, {formatDebugNumber(coordinateDebug.client.y)}</dd>
+                  </div>
+                  <div>
+                    <dt>canvas px</dt>
+                    <dd>{formatDebugNumber(coordinateDebug.canvasPoint.x)}, {formatDebugNumber(coordinateDebug.canvasPoint.y)}</dd>
+                  </div>
+                  <div>
+                    <dt>ndc</dt>
+                    <dd>{formatDebugNumber(coordinateDebug.ndc.x, 4)}, {formatDebugNumber(coordinateDebug.ndc.y, 4)}</dd>
+                  </div>
+                  <div>
+                    <dt>world client</dt>
+                    <dd>
+                      {coordinateDebug.worldFromClient
+                        ? `${formatDebugNumber(coordinateDebug.worldFromClient.x, 4)}, ${formatDebugNumber(coordinateDebug.worldFromClient.y, 4)}`
+                        : '-'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>world r3f</dt>
+                    <dd>{formatDebugNumber(coordinateDebug.worldFromR3f.x, 4)}, {formatDebugNumber(coordinateDebug.worldFromR3f.y, 4)}</dd>
+                  </div>
+                  <div>
+                    <dt>delta</dt>
+                    <dd>
+                      {coordinateDebug.worldDelta
+                        ? `${formatDebugNumber(coordinateDebug.worldDelta.x, 5)}, ${formatDebugNumber(coordinateDebug.worldDelta.y, 5)}`
+                        : '-'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>inside</dt>
+                    <dd>{coordinateDebug.drawingInside === null ? '-' : coordinateDebug.drawingInside ? 'yes' : 'no'}</dd>
+                  </div>
+                  <div>
+                    <dt>canvas rect</dt>
+                    <dd>
+                      {formatDebugNumber(coordinateDebug.rect.width, 1)} x {formatDebugNumber(coordinateDebug.rect.height, 1)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>buffer/dpr</dt>
+                    <dd>
+                      {coordinateDebug.buffer.width} x {coordinateDebug.buffer.height} / {formatDebugNumber(coordinateDebug.buffer.dpr, 2)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>camera</dt>
+                    <dd>
+                      {coordinateDebug.camera.kind} z{formatDebugNumber(coordinateDebug.camera.zoom, 2)} @ {formatDebugNumber(coordinateDebug.camera.x, 2)}, {formatDebugNumber(coordinateDebug.camera.y, 2)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>capture</dt>
+                    <dd>
+                      {coordinateDebug.captured ? 'yes' : 'no'} / {coordinateDebug.capturedPointerId ?? '-'} / {coordinateDebug.r3fEventCompute}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </>
+          ) : (
+            <div className="coordinate-debug-panel idle">
+              <strong>좌표 디버그</strong>
+              <p>펜/선택 모드에서 캔버스 위로 포인터를 움직이면 좌표가 표시됩니다.</p>
+            </div>
+          )}
+        </div>
+      </Html>
 
       {editingText
         ? objects

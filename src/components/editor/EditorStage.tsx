@@ -1,5 +1,6 @@
 import { OrthographicCamera } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, events } from "@react-three/fiber";
+import type { ComputeFunction } from "@react-three/fiber";
 import type { CSSProperties, ReactNode } from "react";
 import type { ExamPreset } from "../../data/examPresets";
 import { EditorScene } from "./scene/EditorScene";
@@ -7,6 +8,30 @@ import type { EditorSceneProps } from "./scene/EditorScene";
 import { ExamLibraryOverlay } from "./ExamLibraryOverlay";
 
 const ACTIVE_EXAM_OBJECT_ID = "object_exam_active";
+
+function createCanvasEvents(store: Parameters<typeof events>[0]) {
+  const defaultEvents = events(store);
+  const compute: ComputeFunction = (event, state, previous) => {
+    const sourceEvent = event as PointerEvent;
+    const rect = state.gl.domElement.getBoundingClientRect();
+
+    if (rect.width <= 0 || rect.height <= 0) {
+      defaultEvents.compute?.(event, state, previous);
+      return;
+    }
+
+    state.pointer.set(
+      ((sourceEvent.clientX - rect.left) / rect.width) * 2 - 1,
+      -(((sourceEvent.clientY - rect.top) / rect.height) * 2 - 1),
+    );
+    state.raycaster.setFromCamera(state.pointer, state.camera);
+  };
+
+  return {
+    ...defaultEvents,
+    compute,
+  };
+}
 
 type EditorStageProps = EditorSceneProps & {
   examPresets: ExamPreset[];
@@ -117,7 +142,12 @@ export function EditorStage({
           ) : null}
           {shouldRenderCanvasOverlay ? (
             <div className="stage-canvas-overlay">
-              <Canvas className="stage-canvas" dpr={[1, 2]} gl={{ alpha: true }}>
+              <Canvas
+                className="stage-canvas"
+                dpr={[1, 2]}
+                events={createCanvasEvents}
+                gl={{ alpha: true }}
+              >
                 <OrthographicCamera
                   makeDefault
                   position={[0, 0, 7]}
