@@ -62,7 +62,7 @@ export function StrokeMesh({
               onPointerDown={onSelect}
               userData={{ sceneType: 'stroke', sceneId: stroke.id, sceneLayer: stroke.layer, sceneName: strokeSceneName }}
             >
-              <meshBasicMaterial color={stroke.color} depthTest={false} depthWrite={false} />
+              <meshBasicMaterial color={stroke.color} transparent opacity={1} depthTest={false} depthWrite={false} />
             </mesh>
           ) : null}
         </>

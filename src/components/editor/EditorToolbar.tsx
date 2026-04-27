@@ -1,6 +1,7 @@
 import {
   ChevronsDown,
   ChevronsUp,
+  Download,
   Eraser,
   GripVertical,
   Hand,
@@ -37,6 +38,7 @@ type EditorToolbarProps = {
   onAddText: () => void;
   onAddImage: () => void;
   onImageFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onExportImage: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onToggleReadonly: () => void;
@@ -88,6 +90,7 @@ export function EditorToolbar({
   onAddText,
   onAddImage,
   onImageFileChange,
+  onExportImage,
   onZoomIn,
   onZoomOut,
   onToggleReadonly,
@@ -313,6 +316,9 @@ export function EditorToolbar({
             </ToolButton>
             <ToolButton label="이미지 추가" onClick={onAddImage}>
               <ImagePlus size={18} />
+            </ToolButton>
+            <ToolButton label="이미지로 저장" onClick={onExportImage}>
+              <Download size={18} />
             </ToolButton>
             <ToolButton label="축소" onClick={onZoomOut}>
               <ZoomOut size={18} />

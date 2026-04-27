@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { ExamPreset } from "../../data/examPresets";
+import { exportPageImage } from "../../lib/exportPageImage";
 import { PAGE_HEIGHT, PAGE_WIDTH } from "../../lib/pageGeometry";
 import { PerformanceMonitor } from "./PerformanceMonitor";
 import { EditorScene } from "./scene/EditorScene";
@@ -15,6 +16,7 @@ type EditorStageProps = EditorSceneProps & {
   onSelectExamPreset: (presetId: string) => void;
   questionContent?: ReactNode;
   pageZoom?: number;
+  exportRequestId?: number;
 };
 
 export function EditorStage({
@@ -23,10 +25,12 @@ export function EditorStage({
   onSelectExamPreset,
   questionContent,
   pageZoom = 1,
+  exportRequestId = 0,
   ...sceneProps
 }: EditorStageProps) {
   const frameRef = useRef<HTMLDivElement>(null);
   const [fitScale, setFitScale] = useState(1);
+  const [isExporting, setIsExporting] = useState(false);
   const activeExamIndex = examPresets.findIndex(
     (preset) => preset.id === activeExamPresetId,
   );
@@ -72,6 +76,47 @@ export function EditorStage({
     return () => observer.disconnect();
   }, [usesFixedPage]);
 
+  useEffect(() => {
+    if (!exportRequestId || !usesFixedPage) return;
+
+    let cancelled = false;
+    setIsExporting(true);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+
+        const frame = frameRef.current;
+        const pageElement = frame?.querySelector<HTMLElement>(".stage-react-exam-page");
+        const webglCanvas = frame?.querySelector<HTMLCanvasElement>(
+          "canvas.stage-canvas, .stage-canvas canvas, canvas",
+        );
+        if (!pageElement || !webglCanvas) {
+          setIsExporting(false);
+          return;
+        }
+
+        exportPageImage({
+          pageElement,
+          webglCanvas,
+          width: PAGE_WIDTH,
+          height: PAGE_HEIGHT,
+        })
+          .catch((error) => {
+            console.error(error);
+          })
+          .finally(() => {
+            setIsExporting(false);
+          });
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      setIsExporting(false);
+    };
+  }, [exportRequestId, usesFixedPage]);
+
   return (
     <section className="stage">
       <div className="stage-topbar" aria-hidden="true">
@@ -100,7 +145,7 @@ export function EditorStage({
               <Canvas
                 className="stage-canvas"
                 dpr={[1, 2]}
-                gl={{ alpha: true }}
+                gl={{ alpha: true, preserveDrawingBuffer: true }}
               >
                 <PerformanceMonitor />
                 <OrthographicCamera
@@ -114,6 +159,7 @@ export function EditorStage({
                 <ambientLight intensity={1.4} />
                 <EditorScene
                   {...sceneProps}
+                  hideEditorChrome={isExporting}
                   renderSceneBackground={!questionContent}
                   viewportLocked={usesFixedPage}
                 />

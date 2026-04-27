@@ -117,6 +117,7 @@ export type EditorSceneProps = {
   onTextEditChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
   onTextEditKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onCommitTextEdit: () => void;
+  hideEditorChrome?: boolean;
   renderSceneBackground?: boolean;
   renderVisualLayer?: boolean;
   viewportLocked?: boolean;
@@ -152,6 +153,7 @@ export function EditorScene({
   onTextEditChange,
   onTextEditKeyDown,
   onCommitTextEdit,
+  hideEditorChrome = false,
   renderSceneBackground = true,
   renderVisualLayer = true,
   viewportLocked = false,
@@ -725,10 +727,10 @@ export function EditorScene({
             key={object.id}
             object={object}
             renderVisual={renderVisualLayer}
-            selected={selection?.type === 'object' && selection.id === object.id}
-            groupSelected={isSelectedItem('object', object.id)}
+            selected={!hideEditorChrome && selection?.type === 'object' && selection.id === object.id}
+            groupSelected={!hideEditorChrome && isSelectedItem('object', object.id)}
             editing={editingText?.id === object.id}
-            canResize={tool === 'select'}
+            canResize={!hideEditorChrome && tool === 'select'}
             onStartTextEdit={onStartTextEdit}
             onSelect={(event) => {
               if (object.id === activeExamObjectId) return;
@@ -760,10 +762,10 @@ export function EditorScene({
             key={stroke.id}
             stroke={stroke}
             renderVisual={renderVisualLayer}
-            selected={selection?.type === 'stroke' && selection.id === stroke.id}
-            groupSelected={isSelectedItem('stroke', stroke.id)}
+            selected={!hideEditorChrome && selection?.type === 'stroke' && selection.id === stroke.id}
+            groupSelected={!hideEditorChrome && isSelectedItem('stroke', stroke.id)}
             canMove={tool === 'select'}
-            canResize={tool === 'select'}
+            canResize={!hideEditorChrome && tool === 'select'}
             onMoveStart={(point) => beginStrokeMove(stroke, point)}
             onSelect={(event) => {
               if (readonly) return;
@@ -782,16 +784,16 @@ export function EditorScene({
           />
         ))}
 
-      {groupSelection.length > 1 && groupBounds ? (
+      {!hideEditorChrome && groupSelection.length > 1 && groupBounds ? (
         <group name={`selection:group:${groupSelection.length}`} position={[groupBounds.centerX, groupBounds.centerY, 0.08]}>
           <SelectionFrame name="selection:group:frame" width={groupBounds.width + 28} height={groupBounds.height + 28} />
           <ResizeHandleMarker name="selection:group:resize-handle:se" width={groupBounds.width} height={groupBounds.height} />
         </group>
       ) : null}
 
-      {marqueeState ? <MarqueeFrame name="selection:marquee" bounds={getBoundsFromPoints(marqueeState.start, marqueeState.current)} /> : null}
+      {!hideEditorChrome && marqueeState ? <MarqueeFrame name="selection:marquee" bounds={getBoundsFromPoints(marqueeState.start, marqueeState.current)} /> : null}
 
-      {editingText
+      {!hideEditorChrome && editingText
         ? objects
             .filter((object) => object.id === editingText.id)
             .map((object) => (

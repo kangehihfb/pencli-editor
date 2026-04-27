@@ -36,8 +36,15 @@ export function WebGLObjectMesh({
         backgroundColor: object.imageBackground,
       });
     }
-    return createTextObjectTexture(object.text ?? '');
-  }, [object.imageBackground, object.imageSrc, object.kind, object.text]);
+    if (object.kind === 'text') {
+      return createTextObjectTexture({
+        text: object.text ?? '',
+        width: object.width,
+        height: object.height,
+      });
+    }
+    return null;
+  }, [object.height, object.imageBackground, object.imageSrc, object.kind, object.text, object.width]);
 
   return (
     <group name={objectSceneName} position={[object.x, object.y, layerToZ(object.layer)]}>
@@ -58,9 +65,10 @@ export function WebGLObjectMesh({
         <planeGeometry args={[object.width, object.height]} />
         <meshBasicMaterial
           map={renderVisual ? texture : undefined}
+          colorWrite={renderVisual}
           opacity={renderVisual ? 1 : 0}
-          transparent={!renderVisual}
-          alphaTest={renderVisual && object.kind === 'text' ? 0.02 : 0}
+          transparent
+          alphaTest={object.kind === 'text' ? 0.01 : 0}
           side={THREE.DoubleSide}
           toneMapped={false}
           depthTest={false}

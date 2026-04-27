@@ -4,24 +4,31 @@ function configureTexture(texture: THREE.Texture) {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.flipY = false;
   texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.minFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
   texture.anisotropy = 4;
   return texture;
 }
 
-export function createTextObjectTexture(text: string) {
+type TextTextureOptions = {
+  text: string;
+  width: number;
+  height: number;
+};
+
+export function createTextObjectTexture({ text, width, height }: TextTextureOptions) {
   const canvas = document.createElement('canvas');
-  canvas.width = 640;
-  canvas.height = 220;
+  canvas.width = Math.max(512, Math.ceil(width * 4));
+  canvas.height = Math.max(192, Math.ceil(height * 4));
   const ctx = canvas.getContext('2d');
 
   if (ctx) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#1f2a44';
-    ctx.font = '700 58px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif';
+    ctx.font = `700 ${Math.max(28, Math.min(canvas.height * 0.48, canvas.width * 0.2))}px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text || ' ', canvas.width / 2, canvas.height / 2);
+    ctx.fillText(text || ' ', canvas.width / 2, canvas.height / 2, canvas.width * 0.92);
   }
 
   const texture = new THREE.CanvasTexture(canvas);
