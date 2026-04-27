@@ -1,4 +1,4 @@
-import { Html, OrbitControls } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -44,46 +44,8 @@ import { WebGLObjectMesh } from './WebGLObjectMesh';
 
 const editorPointerPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 const activeExamObjectId = 'object_exam_active';
-const cameraFitPadding = 0.98;
+const cameraFitPadding = 1;
 const maxOrthographicZoomScale = 4;
-
-type CoordinateDebugSnapshot = {
-  phase: 'down' | 'move' | 'up';
-  pointerId: number;
-  pointerType: string;
-  buttons: number;
-  pressure: number;
-  client: Point2D;
-  canvasPoint: Point2D;
-  ndc: Point2D;
-  worldFromClient: Point2D | null;
-  worldFromR3f: Point2D;
-  worldDelta: Point2D | null;
-  clientMarker: Point2D;
-  r3fMarker: Point2D | null;
-  drawingInside: boolean | null;
-  rect: {
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-  };
-  buffer: {
-    width: number;
-    height: number;
-    dpr: number;
-  };
-  camera: {
-    kind: string;
-    zoom: number;
-    x: number;
-    y: number;
-    z: number;
-  };
-  capturedPointerId: number | null;
-  captured: boolean;
-  r3fEventCompute: 'client-rect';
-};
 
 function clampPointToBounds(point: Point2D, bounds: PointBounds) {
   return {
@@ -93,21 +55,36 @@ function clampPointToBounds(point: Point2D, bounds: PointBounds) {
 }
 
 function getOrthographicFitZoom(camera: THREE.OrthographicCamera, bounds: PointBounds) {
-  const frustumWidth = camera.right - camera.left;
-  const frustumHeight = camera.top - camera.bottom;
+  const frustumWidth = Math.abs(camera.right - camera.left);
+  const frustumHeight = Math.abs(camera.top - camera.bottom);
   return Math.min(frustumWidth / bounds.width, frustumHeight / bounds.height) * cameraFitPadding;
 }
 
 function getOrthographicVisibleSize(camera: THREE.OrthographicCamera) {
   return {
-    width: (camera.right - camera.left) / Math.max(camera.zoom, 0.001),
-    height: (camera.top - camera.bottom) / Math.max(camera.zoom, 0.001),
+    width: Math.abs(camera.right - camera.left) / Math.max(camera.zoom, 0.001),
+    height: Math.abs(camera.top - camera.bottom) / Math.max(camera.zoom, 0.001),
   };
 }
 
-function formatDebugNumber(value: number | null | undefined, digits = 2) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
-  return value.toFixed(digits);
+function configureLockedPageCamera(
+  camera: THREE.Camera,
+  bounds: PointBounds,
+  controls: ElementRef<typeof OrbitControls> | null,
+) {
+  if (!(camera instanceof THREE.OrthographicCamera)) return false;
+
+  camera.left = bounds.minX;
+  camera.right = bounds.maxX;
+  camera.top = bounds.minY;
+  camera.bottom = bounds.maxY;
+  camera.zoom = 1;
+  camera.position.set(0, 0, 7);
+  camera.lookAt(0, 0, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  controls?.target.set(0, 0, 0);
+  return true;
 }
 
 export type EditorSceneProps = {
@@ -141,6 +118,8 @@ export type EditorSceneProps = {
   onTextEditKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onCommitTextEdit: () => void;
   renderSceneBackground?: boolean;
+  renderVisualLayer?: boolean;
+  viewportLocked?: boolean;
 };
 
 export function EditorScene({
@@ -174,6 +153,8 @@ export function EditorScene({
   onTextEditKeyDown,
   onCommitTextEdit,
   renderSceneBackground = true,
+  renderVisualLayer = true,
+  viewportLocked = false,
 }: EditorSceneProps) {
   const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
   const { camera, gl, size } = useThree();
@@ -181,7 +162,6 @@ export function EditorScene({
   const drawingBoundsRef = useRef(drawingBounds);
   const isClampingCameraRef = useRef(false);
   const [marqueeState, setMarqueeState] = useState<MarqueeState>(null);
-  const [coordinateDebug, setCoordinateDebug] = useState<CoordinateDebugSnapshot | null>(null);
   const isDrawingRef = useRef(false);
   const activePointerIdRef = useRef<number | null>(null);
   const lastObjectClickRef = useRef<{ id: string; time: number } | null>(null);
@@ -222,6 +202,10 @@ export function EditorScene({
       if (isClampingCameraRef.current) return;
 
       const controls = controlsRef.current;
+      if (viewportLocked && configureLockedPageCamera(camera, bounds, controls)) {
+        return;
+      }
+
       if (camera instanceof THREE.OrthographicCamera) {
         const fitZoom = getOrthographicFitZoom(camera, bounds);
         const nextZoom = fitToBounds
@@ -297,11 +281,12 @@ export function EditorScene({
       controls?.update();
       isClampingCameraRef.current = false;
     },
-    [camera, size.height, size.width],
+    [camera, size.height, size.width, viewportLocked],
   );
 
   useEffect(() => {
     if (!zoomCommand) return;
+    if (viewportLocked) return;
     if (zoomCommand.factor === 0) {
       camera.position.set(0, 0, 7);
       camera.zoom = 1;
@@ -318,15 +303,19 @@ export function EditorScene({
     }
     camera.updateProjectionMatrix();
     clampCameraToDrawingBounds(false);
-  }, [camera, clampCameraToDrawingBounds, drawingBounds?.centerX, drawingBounds?.centerY, zoomCommand]);
+  }, [camera, clampCameraToDrawingBounds, drawingBounds?.centerX, drawingBounds?.centerY, viewportLocked, zoomCommand]);
 
   useEffect(() => {
     const bounds = drawingBoundsRef.current;
     if (!bounds) return;
+    if (viewportLocked && configureLockedPageCamera(camera, bounds, controlsRef.current)) {
+      return;
+    }
+
     camera.position.set(bounds.centerX, bounds.centerY, 7);
     controlsRef.current?.target.set(bounds.centerX, bounds.centerY, 0);
     clampCameraToDrawingBounds(true);
-  }, [camera, clampCameraToDrawingBounds, drawingBoundsKey]);
+  }, [camera, clampCameraToDrawingBounds, drawingBoundsKey, size.height, size.width, viewportLocked]);
 
   const getPointerPointFromClient = useCallback(
     (event: PointerEvent): Point2D | null => {
@@ -347,11 +336,7 @@ export function EditorScene({
     },
     [camera, gl.domElement],
   );
-  const getPointerPointFromEvent = useCallback(
-    (event: ThreeEvent<PointerEvent>) =>
-      getPointerPointFromClient(event.nativeEvent) ?? getEditorPointerPoint(event),
-    [getPointerPointFromClient],
-  );
+  const getPointerPointFromEvent = useCallback((event: ThreeEvent<PointerEvent>) => getEditorPointerPoint(event), []);
   const capturePointer = useCallback(
     (event: ThreeEvent<PointerEvent>) => {
       const pointerId = event.nativeEvent.pointerId;
@@ -380,86 +365,6 @@ export function EditorScene({
     }
     activePointerIdRef.current = null;
   }, [gl.domElement]);
-  const getCanvasPointFromWorld = useCallback(
-    (point: Point2D) => {
-      const rect = gl.domElement.getBoundingClientRect();
-      const projected = new THREE.Vector3(point.x, point.y, 0).project(camera);
-      return {
-        x: ((projected.x + 1) / 2) * rect.width,
-        y: ((-projected.y + 1) / 2) * rect.height,
-      };
-    },
-    [camera, gl.domElement],
-  );
-  const updateCoordinateDebug = useCallback(
-    (event: ThreeEvent<PointerEvent>, phase: CoordinateDebugSnapshot['phase']) => {
-      const nativeEvent = event.nativeEvent;
-      const rect = gl.domElement.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-
-      const canvasPoint = {
-        x: nativeEvent.clientX - rect.left,
-        y: nativeEvent.clientY - rect.top,
-      };
-      const ndc = {
-        x: (canvasPoint.x / rect.width) * 2 - 1,
-        y: -((canvasPoint.y / rect.height) * 2 - 1),
-      };
-      const worldFromClient = getPointerPointFromClient(nativeEvent);
-      const worldFromR3f = getEditorPointerPoint(event);
-      const worldDelta = worldFromClient
-        ? {
-            x: worldFromClient.x - worldFromR3f.x,
-            y: worldFromClient.y - worldFromR3f.y,
-          }
-        : null;
-      const r3fMarker = worldFromR3f ? getCanvasPointFromWorld(worldFromR3f) : null;
-      const pointerId = nativeEvent.pointerId;
-
-      setCoordinateDebug({
-        phase,
-        pointerId,
-        pointerType: nativeEvent.pointerType || 'mouse',
-        buttons: nativeEvent.buttons,
-        pressure: nativeEvent.pressure,
-        client: {
-          x: nativeEvent.clientX,
-          y: nativeEvent.clientY,
-        },
-        canvasPoint,
-        ndc,
-        worldFromClient,
-        worldFromR3f,
-        worldDelta,
-        clientMarker: canvasPoint,
-        r3fMarker,
-        drawingInside: worldFromClient && drawingBounds ? isPointInBounds(worldFromClient, drawingBounds) : null,
-        rect: {
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-        },
-        buffer: {
-          width: gl.domElement.width,
-          height: gl.domElement.height,
-          dpr: window.devicePixelRatio || 1,
-        },
-        camera: {
-          kind: camera instanceof THREE.OrthographicCamera ? 'orthographic' : 'perspective',
-          zoom: camera.zoom,
-          x: camera.position.x,
-          y: camera.position.y,
-          z: camera.position.z,
-        },
-        capturedPointerId: activePointerIdRef.current,
-        captured: gl.domElement.hasPointerCapture?.(pointerId) ?? false,
-        r3fEventCompute: 'client-rect',
-      });
-    },
-    [camera, drawingBounds, getCanvasPointFromWorld, getPointerPointFromClient, gl.domElement],
-  );
-
   const getBoundedPoint = useCallback((point: Point2D) => (drawingBounds ? clampPointToBounds(point, drawingBounds) : point), [drawingBounds]);
 
   const updateResize = useCallback(
@@ -531,7 +436,7 @@ export function EditorScene({
 
   const tryStartGroupMove = (pointer: Point2D) => {
     if (readonly || tool !== 'select' || groupSelection.length < 2 || !groupBounds) return false;
-    if (!isPointInBounds(pointer, groupBounds, 0.08)) return false;
+    if (!isPointInBounds(pointer, groupBounds, 8)) return false;
     onResizeStateChange(null);
     onDragStateChange({ type: 'group', items: groupSelection, last: pointer });
     return true;
@@ -691,18 +596,26 @@ export function EditorScene({
       <OrbitControls
         ref={controlsRef}
         enableRotate={false}
-        enablePan={tool === 'pan'}
-        enableZoom={Boolean(drawingBounds)}
+        enablePan={!viewportLocked && tool === 'pan'}
+        enableZoom={Boolean(drawingBounds) && !viewportLocked}
         minDistance={0.65}
         maxDistance={80}
         minZoom={cameraZoomLimits.min}
         maxZoom={cameraZoomLimits.max}
         onChange={() => clampCameraToDrawingBounds(false)}
-        mouseButtons={{
-          LEFT: tool === 'pan' ? THREE.MOUSE.PAN : undefined,
-          MIDDLE: THREE.MOUSE.DOLLY,
-          RIGHT: THREE.MOUSE.PAN,
-        }}
+        mouseButtons={
+          viewportLocked
+            ? {
+                LEFT: undefined,
+                MIDDLE: undefined,
+                RIGHT: undefined,
+              }
+            : {
+                LEFT: tool === 'pan' ? THREE.MOUSE.PAN : undefined,
+                MIDDLE: THREE.MOUSE.DOLLY,
+                RIGHT: THREE.MOUSE.PAN,
+              }
+        }
       />
 
       {renderSceneBackground ? <BoardGrid /> : null}
@@ -710,7 +623,6 @@ export function EditorScene({
         name="editor:interaction-plane"
         position={[interactionBounds.centerX, interactionBounds.centerY, -0.4]}
         onPointerDown={(event) => {
-          updateCoordinateDebug(event, 'down');
           const rawPoint = toPoint(event);
           const point = getBoundedPoint(rawPoint);
           if (readonly) return;
@@ -739,7 +651,6 @@ export function EditorScene({
           }
         }}
         onPointerMove={(event) => {
-          updateCoordinateDebug(event, 'move');
           const rawPoint = toPoint(event);
           const point = getBoundedPoint(rawPoint);
 
@@ -791,7 +702,6 @@ export function EditorScene({
           onMoveObject(dragState.id, point, dragState.offset);
         }}
         onPointerUp={(event) => {
-          updateCoordinateDebug(event, 'up');
           if (tool === 'pen' && isDrawingRef.current) {
             event.stopPropagation();
             isDrawingRef.current = false;
@@ -814,6 +724,7 @@ export function EditorScene({
           <WebGLObjectMesh
             key={object.id}
             object={object}
+            renderVisual={renderVisualLayer}
             selected={selection?.type === 'object' && selection.id === object.id}
             groupSelected={isSelectedItem('object', object.id)}
             editing={editingText?.id === object.id}
@@ -848,6 +759,7 @@ export function EditorScene({
           <StrokeMesh
             key={stroke.id}
             stroke={stroke}
+            renderVisual={renderVisualLayer}
             selected={selection?.type === 'stroke' && selection.id === stroke.id}
             groupSelected={isSelectedItem('stroke', stroke.id)}
             canMove={tool === 'select'}
@@ -872,115 +784,12 @@ export function EditorScene({
 
       {groupSelection.length > 1 && groupBounds ? (
         <group name={`selection:group:${groupSelection.length}`} position={[groupBounds.centerX, groupBounds.centerY, 0.08]}>
-          <SelectionFrame name="selection:group:frame" width={groupBounds.width + 0.28} height={groupBounds.height + 0.28} />
+          <SelectionFrame name="selection:group:frame" width={groupBounds.width + 28} height={groupBounds.height + 28} />
           <ResizeHandleMarker name="selection:group:resize-handle:se" width={groupBounds.width} height={groupBounds.height} />
         </group>
       ) : null}
 
       {marqueeState ? <MarqueeFrame name="selection:marquee" bounds={getBoundsFromPoints(marqueeState.start, marqueeState.current)} /> : null}
-
-      <Html fullscreen zIndexRange={[20, 0]} prepend={false}>
-        <div className="coordinate-debug-overlay" aria-hidden="true">
-          {coordinateDebug ? (
-            <>
-              <div
-                className="coordinate-debug-crosshair client"
-                style={{
-                  transform: `translate(${coordinateDebug.clientMarker.x}px, ${coordinateDebug.clientMarker.y}px)`,
-                }}
-              />
-              {coordinateDebug.r3fMarker ? (
-                <div
-                  className="coordinate-debug-crosshair r3f"
-                  style={{
-                    transform: `translate(${coordinateDebug.r3fMarker.x}px, ${coordinateDebug.r3fMarker.y}px)`,
-                  }}
-                />
-              ) : null}
-              <div className="coordinate-debug-panel">
-                <strong>좌표 디버그</strong>
-                <dl>
-                  <div>
-                    <dt>phase/tool</dt>
-                    <dd>{coordinateDebug.phase} / {tool}</dd>
-                  </div>
-                  <div>
-                    <dt>pointer</dt>
-                    <dd>
-                      {coordinateDebug.pointerType} #{coordinateDebug.pointerId} b{coordinateDebug.buttons} p{formatDebugNumber(coordinateDebug.pressure, 3)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>client</dt>
-                    <dd>{formatDebugNumber(coordinateDebug.client.x)}, {formatDebugNumber(coordinateDebug.client.y)}</dd>
-                  </div>
-                  <div>
-                    <dt>canvas px</dt>
-                    <dd>{formatDebugNumber(coordinateDebug.canvasPoint.x)}, {formatDebugNumber(coordinateDebug.canvasPoint.y)}</dd>
-                  </div>
-                  <div>
-                    <dt>ndc</dt>
-                    <dd>{formatDebugNumber(coordinateDebug.ndc.x, 4)}, {formatDebugNumber(coordinateDebug.ndc.y, 4)}</dd>
-                  </div>
-                  <div>
-                    <dt>world client</dt>
-                    <dd>
-                      {coordinateDebug.worldFromClient
-                        ? `${formatDebugNumber(coordinateDebug.worldFromClient.x, 4)}, ${formatDebugNumber(coordinateDebug.worldFromClient.y, 4)}`
-                        : '-'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>world r3f</dt>
-                    <dd>{formatDebugNumber(coordinateDebug.worldFromR3f.x, 4)}, {formatDebugNumber(coordinateDebug.worldFromR3f.y, 4)}</dd>
-                  </div>
-                  <div>
-                    <dt>delta</dt>
-                    <dd>
-                      {coordinateDebug.worldDelta
-                        ? `${formatDebugNumber(coordinateDebug.worldDelta.x, 5)}, ${formatDebugNumber(coordinateDebug.worldDelta.y, 5)}`
-                        : '-'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>inside</dt>
-                    <dd>{coordinateDebug.drawingInside === null ? '-' : coordinateDebug.drawingInside ? 'yes' : 'no'}</dd>
-                  </div>
-                  <div>
-                    <dt>canvas rect</dt>
-                    <dd>
-                      {formatDebugNumber(coordinateDebug.rect.width, 1)} x {formatDebugNumber(coordinateDebug.rect.height, 1)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>buffer/dpr</dt>
-                    <dd>
-                      {coordinateDebug.buffer.width} x {coordinateDebug.buffer.height} / {formatDebugNumber(coordinateDebug.buffer.dpr, 2)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>camera</dt>
-                    <dd>
-                      {coordinateDebug.camera.kind} z{formatDebugNumber(coordinateDebug.camera.zoom, 2)} @ {formatDebugNumber(coordinateDebug.camera.x, 2)}, {formatDebugNumber(coordinateDebug.camera.y, 2)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>capture</dt>
-                    <dd>
-                      {coordinateDebug.captured ? 'yes' : 'no'} / {coordinateDebug.capturedPointerId ?? '-'} / {coordinateDebug.r3fEventCompute}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-            </>
-          ) : (
-            <div className="coordinate-debug-panel idle">
-              <strong>좌표 디버그</strong>
-              <p>펜/선택 모드에서 캔버스 위로 포인터를 움직이면 좌표가 표시됩니다.</p>
-            </div>
-          )}
-        </div>
-      </Html>
 
       {editingText
         ? objects

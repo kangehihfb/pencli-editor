@@ -7,6 +7,7 @@ import { ResizeHandleMarker, SelectionFrame } from './SelectionVisuals';
 
 type StrokeMeshProps = {
   stroke: Stroke;
+  renderVisual: boolean;
   selected: boolean;
   groupSelected: boolean;
   canMove: boolean;
@@ -17,6 +18,7 @@ type StrokeMeshProps = {
 
 export function StrokeMesh({
   stroke,
+  renderVisual,
   selected,
   groupSelected,
   canMove,
@@ -30,7 +32,7 @@ export function StrokeMesh({
     const points = getSmoothedStrokePoints(stroke.points).map((point) => new THREE.Vector3(point.x, point.y, 0));
     const tubularSegments = Math.max(24, points.length * 2);
     const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.35);
-    const pickerRadius = Math.max(stroke.size * 1.45, stroke.size + 0.018);
+    const pickerRadius = Math.max(stroke.size * 1.45, stroke.size + 1.8);
     return {
       visual: new THREE.TubeGeometry(curve, tubularSegments, stroke.size, 8, false),
       picker: new THREE.TubeGeometry(curve, tubularSegments, pickerRadius, 8, false),
@@ -52,22 +54,24 @@ export function StrokeMesh({
           >
             <meshBasicMaterial transparent opacity={0} depthTest={false} depthWrite={false} />
           </mesh>
-          <mesh
-            name={`${strokeSceneName}:visual`}
-            geometry={geometry.visual}
-            renderOrder={stroke.layer * 10 + 1}
-            onPointerDown={onSelect}
-            userData={{ sceneType: 'stroke', sceneId: stroke.id, sceneLayer: stroke.layer, sceneName: strokeSceneName }}
-          >
-            <meshBasicMaterial color={stroke.color} depthTest={false} depthWrite={false} />
-          </mesh>
+          {renderVisual ? (
+            <mesh
+              name={`${strokeSceneName}:visual`}
+              geometry={geometry.visual}
+              renderOrder={stroke.layer * 10 + 1}
+              onPointerDown={onSelect}
+              userData={{ sceneType: 'stroke', sceneId: stroke.id, sceneLayer: stroke.layer, sceneName: strokeSceneName }}
+            >
+              <meshBasicMaterial color={stroke.color} depthTest={false} depthWrite={false} />
+            </mesh>
+          ) : null}
         </>
       ) : null}
       {selected || groupSelected ? (
         <group name={`${strokeSceneName}:selection`} position={[bounds.centerX, bounds.centerY, 0.04]}>
-          <SelectionFrame name={`${strokeSceneName}:selection-frame`} width={bounds.width + 0.22} height={bounds.height + 0.22} />
+          <SelectionFrame name={`${strokeSceneName}:selection-frame`} width={bounds.width + 22} height={bounds.height + 22} />
           {selected && canResize ? (
-            <ResizeHandleMarker name={`${strokeSceneName}:resize-handle:se`} width={bounds.width + 0.22} height={bounds.height + 0.22} />
+            <ResizeHandleMarker name={`${strokeSceneName}:resize-handle:se`} width={bounds.width + 22} height={bounds.height + 22} />
           ) : null}
         </group>
       ) : null}

@@ -1,5 +1,6 @@
 import type { ThreeEvent } from '@react-three/fiber';
 import { useMemo } from 'react';
+import * as THREE from 'three';
 import { createImageObjectTexture, createTextObjectTexture } from '../../../lib/objectTexture';
 import { layerToZ } from '../../../lib/sceneMath';
 import type { WebGLObject } from '../../../types/editor';
@@ -7,6 +8,7 @@ import { ResizeHandleMarker, SelectionFrame } from './SelectionVisuals';
 
 type WebGLObjectMeshProps = {
   object: WebGLObject;
+  renderVisual: boolean;
   selected: boolean;
   groupSelected: boolean;
   editing: boolean;
@@ -17,6 +19,7 @@ type WebGLObjectMeshProps = {
 
 export function WebGLObjectMesh({
   object,
+  renderVisual,
   selected,
   groupSelected,
   editing,
@@ -54,10 +57,11 @@ export function WebGLObjectMesh({
       >
         <planeGeometry args={[object.width, object.height]} />
         <meshBasicMaterial
-          map={texture}
-          opacity={editing ? 0.22 : 1}
-          transparent={editing || object.kind === 'text'}
-          alphaTest={object.kind === 'text' ? 0.02 : 0}
+          map={renderVisual ? texture : undefined}
+          opacity={renderVisual ? 1 : 0}
+          transparent={!renderVisual}
+          alphaTest={renderVisual && object.kind === 'text' ? 0.02 : 0}
+          side={THREE.DoubleSide}
           toneMapped={false}
           depthTest={false}
           depthWrite={false}

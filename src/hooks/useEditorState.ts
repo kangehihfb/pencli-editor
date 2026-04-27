@@ -71,14 +71,14 @@ function moveStrokePoints(points: Point2D[], delta: Point2D) {
   return points.map((point) => ({ x: point.x + delta.x, y: point.y + delta.y }));
 }
 
-export function useEditorState() {
+export function useEditorState(drawingBoundsOverride: PointBounds | null = null) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pendingExamPresetIdRef = useRef<string | null>(null);
   const undoHistoryRef = useRef<HistorySnapshot[]>([]);
   const redoHistoryRef = useRef<HistorySnapshot[]>([]);
   const [tool, setTool] = useState<Tool>('answer');
   const [penColor, setPenColor] = useState('#183f3a');
-  const [penSize, setPenSize] = useState(0.035);
+  const [penSize, setPenSize] = useState(3.5);
   const [readonly, setReadonly] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
   const [groupSelection, setGroupSelection] = useState<SelectionItem[]>([]);
@@ -97,7 +97,7 @@ export function useEditorState() {
   const selectedObject = activeSelection?.type === 'object' ? objects.find((object) => object.id === activeSelection.id) ?? null : null;
   const selectedStroke = activeSelection?.type === 'stroke' ? strokes.find((stroke) => stroke.id === activeSelection.id) ?? null : null;
   const activeExamObject = objects.find((object) => object.id === activeExamObjectId) ?? null;
-  const drawingBounds = activeExamObject ? getObjectBounds(activeExamObject) : null;
+  const drawingBounds = drawingBoundsOverride ?? (activeExamObject ? getObjectBounds(activeExamObject) : null);
   const canUndo = historyRevision >= 0 && undoHistoryRef.current.length > 0;
   const canRedo = historyRevision >= 0 && redoHistoryRef.current.length > 0;
 
@@ -160,17 +160,17 @@ export function useEditorState() {
     const object: WebGLObject = {
       id: makeId('text'),
       kind: 'text',
-      x: -0.25,
-      y: 0.2,
-      width: 1.5,
-      height: 0.46,
+      x: drawingBounds?.centerX ?? 500,
+      y: drawingBounds?.centerY ?? 380,
+      width: 150,
+      height: 46,
       layer: maxLayer + 1,
       text: '새 텍스트',
     };
     setObjects((prev) => [...prev, object]);
     setSelection({ type: 'object', id: object.id });
     setGroupSelection([{ type: 'object', id: object.id }]);
-    setEditingText({ id: object.id, value: object.text ?? '' });
+    setEditingText(null);
     setTool('select');
   };
 
@@ -188,13 +188,13 @@ export function useEditorState() {
     const imageSrc = URL.createObjectURL(file);
     const addDecodedImage = (aspect: number) => {
       const safeAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : 1.45;
-      const width = 1.8;
+      const width = 180;
       recordHistory();
       const object: WebGLObject = {
         id: makeId('image'),
         kind: 'image',
-        x: 0,
-        y: 0,
+        x: drawingBounds?.centerX ?? 500,
+        y: drawingBounds?.centerY ?? 380,
         width,
         height: width / safeAspect,
         layer: maxLayer + 1,
@@ -435,9 +435,9 @@ export function useEditorState() {
         return {
           ...object,
           x: origin.bounds.minX + (original.x - origin.bounds.minX) * scale,
-          y: origin.bounds.maxY + (original.y - origin.bounds.maxY) * scale,
-          width: Math.max(0.18, original.width * scale),
-          height: Math.max(0.12, original.height * scale),
+          y: origin.bounds.minY + (original.y - origin.bounds.minY) * scale,
+          width: Math.max(18, original.width * scale),
+          height: Math.max(12, original.height * scale),
         };
       }),
     );
@@ -450,7 +450,7 @@ export function useEditorState() {
           ...stroke,
           points: original.points.map((item) => ({
             x: origin.bounds.minX + (item.x - origin.bounds.minX) * scale,
-            y: origin.bounds.maxY + (item.y - origin.bounds.maxY) * scale,
+            y: origin.bounds.minY + (item.y - origin.bounds.minY) * scale,
           })),
         };
       }),

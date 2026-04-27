@@ -16,8 +16,8 @@ const editorPointerPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 export const makeId = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
 export const layerToZ = (layer: number) => layer * 0.02;
 
-const strokePointMinDistance = 0.006;
-const strokePointMaxSpacing = 0.018;
+const strokePointMinDistance = 0.6;
+const strokePointMaxSpacing = 1.8;
 
 export function getEditorPointerPoint(event: ThreeEvent<PointerEvent>): Point2D {
   const point = new THREE.Vector3();
@@ -99,8 +99,8 @@ export function getSelectionItemsBounds(
     maxY,
     centerX: (minX + maxX) / 2,
     centerY: (minY + maxY) / 2,
-    width: Math.max(maxX - minX, 0.2),
-    height: Math.max(maxY - minY, 0.2),
+    width: Math.max(maxX - minX, 20),
+    height: Math.max(maxY - minY, 20),
   };
 }
 
@@ -121,18 +121,18 @@ export function isPointInResizeHandle(point: Point2D, bounds: PointBounds, varia
   const offset = getResizeHandleOffset(variant);
   const center = {
     x: bounds.maxX + offset,
-    y: bounds.minY - offset,
+    y: bounds.maxY + offset,
   };
   const hitSize = getResizeHandleHitSize(variant);
   return Math.abs(point.x - center.x) <= hitSize / 2 && Math.abs(point.y - center.y) <= hitSize / 2;
 }
 
 function getResizeHandleOffset(variant: 'object' | 'stroke') {
-  return variant === 'stroke' ? 0.23 : 0.14;
+  return variant === 'stroke' ? 23 : 14;
 }
 
 function getResizeHandleHitSize(variant: 'object' | 'stroke') {
-  return variant === 'stroke' ? 0.16 : 0.18;
+  return variant === 'stroke' ? 16 : 18;
 }
 
 export function getResizedObjectRect(
@@ -140,8 +140,8 @@ export function getResizedObjectRect(
   origin: Extract<ResizeState, { type: 'object' }>['origin'],
   point: Point2D,
 ) {
-  const minWidth = 0.18;
-  const minHeight = 0.12;
+  const minWidth = 18;
+  const minHeight = 12;
   const safeWidth = Math.max(origin.width, minWidth);
   const safeHeight = Math.max(origin.height, minHeight);
   const bounds = {
@@ -188,7 +188,7 @@ export function getResizedStrokePoints(
   const corner = getHandlePoint(handle, bounds);
   const anchor = getOppositeHandlePoint(handle, bounds);
   const movedCorner = { x: corner.x + delta.x, y: corner.y + delta.y };
-  const minScale = Math.max(0.15 / bounds.width, 0.15 / bounds.height, 0.15);
+  const minScale = Math.max(15 / bounds.width, 15 / bounds.height, 0.15);
   const scale = getUniformResizeScale(anchor, corner, movedCorner, minScale);
 
   return origin.points.map((item) => ({
@@ -205,7 +205,7 @@ export function getGroupResizeScale(origin: Extract<ResizeState, { type: 'group'
     x: corner.x + point.x - origin.pointer.x,
     y: corner.y + point.y - origin.pointer.y,
   };
-  const minScale = Math.max(0.2 / bounds.width, 0.2 / bounds.height, 0.15);
+  const minScale = Math.max(20 / bounds.width, 20 / bounds.height, 0.15);
   return getUniformResizeScale(anchor, corner, movedCorner, minScale);
 }
 
@@ -222,20 +222,20 @@ function getUniformResizeScale(anchor: Point2D, corner: Point2D, point: Point2D,
 function getHandlePoint(handle: ResizeHandle, bounds: PointBounds): Point2D {
   return {
     x: handle.includes('w') ? bounds.minX : bounds.maxX,
-    y: handle.includes('n') ? bounds.maxY : bounds.minY,
+    y: handle.includes('n') ? bounds.minY : bounds.maxY,
   };
 }
 
 function getOppositeHandlePoint(handle: ResizeHandle, bounds: PointBounds): Point2D {
   return {
     x: handle.includes('w') ? bounds.maxX : bounds.minX,
-    y: handle.includes('n') ? bounds.minY : bounds.maxY,
+    y: handle.includes('n') ? bounds.maxY : bounds.minY,
   };
 }
 
 export function getPointBounds(points: Point2D[]): PointBounds {
   if (points.length === 0) {
-    return { minX: -0.1, maxX: 0.1, minY: -0.1, maxY: 0.1, centerX: 0, centerY: 0, width: 0.2, height: 0.2 };
+    return { minX: -10, maxX: 10, minY: -10, maxY: 10, centerX: 0, centerY: 0, width: 20, height: 20 };
   }
   const xs = points.map((point) => point.x);
   const ys = points.map((point) => point.y);
@@ -250,8 +250,8 @@ export function getPointBounds(points: Point2D[]): PointBounds {
     maxY,
     centerX: (minX + maxX) / 2,
     centerY: (minY + maxY) / 2,
-    width: Math.max(maxX - minX, 0.2),
-    height: Math.max(maxY - minY, 0.2),
+    width: Math.max(maxX - minX, 20),
+    height: Math.max(maxY - minY, 20),
   };
 }
 
@@ -327,11 +327,11 @@ export function isPointNearStroke(stroke: Stroke, point: Point2D, threshold: num
 }
 
 export function getStrokeHitThreshold(stroke: Stroke) {
-  return Math.max(stroke.size * 3.5, 0.11);
+  return Math.max(stroke.size * 3.5, 11);
 }
 
 export function getStrokeSelectionThreshold(stroke: Stroke) {
-  return Math.max(stroke.size * 1.2, 0.035);
+  return Math.max(stroke.size * 1.2, 3.5);
 }
 
 function distance(a: Point2D, b: Point2D) {

@@ -1,11 +1,19 @@
+import { useState } from "react";
 import { ExamPresentation } from "../components/exam/ExamPresentation";
+import { EditorDebugPanel } from "../components/editor/debug/EditorDebugPanel";
 import { EditorStage } from "../components/editor/EditorStage";
 import { EditorToolbar } from "../components/editor/EditorToolbar";
 import { reactExams } from "../data/reactExams";
 import { useEditorState } from "../hooks/useEditorState";
+import { PAGE_BOUNDS } from "../lib/pageGeometry";
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
 
 export function EditorPage() {
-  const editor = useEditorState();
+  const editor = useEditorState(PAGE_BOUNDS);
+  const [pageZoom, setPageZoom] = useState(1);
   const handleToolChange = (nextTool: typeof editor.tool) => {
     editor.setTool(nextTool);
 
@@ -31,8 +39,8 @@ export function EditorPage() {
         onAddText={editor.addText}
         onAddImage={editor.addImage}
         onImageFileChange={editor.addImageFromFile}
-        onZoomIn={() => editor.requestZoom(1.2)}
-        onZoomOut={() => editor.requestZoom(1 / 1.2)}
+        onZoomIn={() => setPageZoom((value) => clamp(value * 1.2, 0.5, 3))}
+        onZoomOut={() => setPageZoom((value) => clamp(value / 1.2, 0.5, 3))}
         onToggleReadonly={() => editor.setReadonly((value) => !value)}
         onDeleteSelection={editor.deleteSelection}
         onClearAll={editor.clearAll}
@@ -54,8 +62,9 @@ export function EditorPage() {
         dragState={editor.dragState}
         resizeState={editor.resizeState}
         editingText={editor.editingText}
-        zoomCommand={editor.zoomCommand}
-        drawingBounds={editor.drawingBounds}
+        zoomCommand={null}
+        drawingBounds={PAGE_BOUNDS}
+        pageZoom={pageZoom}
         examPresets={editor.examPresets}
         activeExamPresetId={editor.activeExamPresetId}
         questionContent={<ExamPresentation exam={reactExams[0]} />}
@@ -80,6 +89,12 @@ export function EditorPage() {
         onCommitTextEdit={editor.commitTextEdit}
       />
 
+      <EditorDebugPanel
+        selectedObject={editor.selectedObject}
+        selectedStroke={editor.selectedStroke}
+        onUpdateObject={editor.updateObject}
+        onUpdateStroke={editor.updateStroke}
+      />
     </main>
   );
 }

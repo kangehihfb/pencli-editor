@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 function configureTexture(texture: THREE.Texture) {
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.flipY = false;
   texture.magFilter = THREE.LinearFilter;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.anisotropy = 4;

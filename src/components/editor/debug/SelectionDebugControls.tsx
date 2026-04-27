@@ -38,9 +38,9 @@ export function SelectionDebugControls({
       },
       x: {
         value: 0,
-        min: -5,
-        max: 5,
-        step: 0.01,
+        min: 0,
+        max: 1000,
+        step: 1,
         onChange: (value: number) => {
           if (Date.now() < ignoreDebugChangesUntilRef.current) return;
           if (selectedObjectRef.current) onUpdateObject(selectedObjectRef.current.id, { x: value });
@@ -48,29 +48,29 @@ export function SelectionDebugControls({
       },
       y: {
         value: 0,
-        min: -4,
-        max: 4,
-        step: 0.01,
+        min: 0,
+        max: 760,
+        step: 1,
         onChange: (value: number) => {
           if (Date.now() < ignoreDebugChangesUntilRef.current) return;
           if (selectedObjectRef.current) onUpdateObject(selectedObjectRef.current.id, { y: value });
         },
       },
       width: {
-        value: 1,
-        min: 0.2,
-        max: 4,
-        step: 0.01,
+        value: 100,
+        min: 12,
+        max: 1000,
+        step: 1,
         onChange: (value: number) => {
           if (Date.now() < ignoreDebugChangesUntilRef.current) return;
           if (selectedObjectRef.current) onUpdateObject(selectedObjectRef.current.id, { width: value });
         },
       },
       height: {
-        value: 1,
-        min: 0.15,
-        max: 3,
-        step: 0.01,
+        value: 46,
+        min: 12,
+        max: 760,
+        step: 1,
         onChange: (value: number) => {
           if (Date.now() < ignoreDebugChangesUntilRef.current) return;
           if (selectedObjectRef.current) onUpdateObject(selectedObjectRef.current.id, { height: value });
@@ -88,10 +88,10 @@ export function SelectionDebugControls({
         },
       },
       strokeSize: {
-        value: 0.035,
-        min: 0.01,
-        max: 0.16,
-        step: 0.005,
+        value: 3.5,
+        min: 1,
+        max: 16,
+        step: 0.5,
         onChange: (value: number) => {
           if (Date.now() < ignoreDebugChangesUntilRef.current) return;
           if (selectedStrokeRef.current) onUpdateStroke(selectedStrokeRef.current.id, { size: value });
@@ -111,7 +111,7 @@ export function SelectionDebugControls({
       width: selectedObject?.width ?? 1,
       height: selectedObject?.height ?? 1,
       layer: selectedObject?.layer ?? selectedStroke?.layer ?? 0,
-      strokeSize: selectedStroke?.size ?? 0.035,
+      strokeSize: selectedStroke?.size ?? 3.5,
     });
   }, [selectedId, selectedObject, selectedStroke, setDebugControls]);
 

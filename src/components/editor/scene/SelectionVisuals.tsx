@@ -38,10 +38,10 @@ export function SelectionFrame({
   width: number;
   height: number;
 }) {
-  const paddedWidth = width + 0.1;
-  const paddedHeight = height + 0.1;
-  const cornerSize = Math.min(0.18, paddedWidth * 0.18, paddedHeight * 0.18);
-  const cornerThickness = 0.018;
+  const paddedWidth = width + 10;
+  const paddedHeight = height + 10;
+  const cornerSize = Math.min(18, paddedWidth * 0.18, paddedHeight * 0.18);
+  const cornerThickness = 1.8;
   const cornerX = paddedWidth / 2;
   const cornerY = paddedHeight / 2;
 
@@ -106,21 +106,21 @@ export function ResizeHandleMarker({
   width: number;
   height: number;
 }) {
-  const handleSize = 0.14;
-  const offset = 0.14;
+  const handleSize = 14;
+  const offset = 14;
   const x = width / 2 + offset;
-  const y = -height / 2 - offset;
+  const y = height / 2 + offset;
 
   return (
     <mesh name={name} position={[x, y, 0.08]} renderOrder={10001} raycast={() => null}>
       <planeGeometry args={[handleSize, handleSize]} />
       <meshBasicMaterial color="#1684ff" depthTest={false} depthWrite={false} />
       <lineSegments name={`${name}:border`} position={[0, 0, 0.01]} raycast={() => null}>
-        <edgesGeometry args={[new THREE.PlaneGeometry(handleSize + 0.035, handleSize + 0.035)]} />
+        <edgesGeometry args={[new THREE.PlaneGeometry(handleSize + 3.5, handleSize + 3.5)]} />
         <lineBasicMaterial color="#ffffff" depthTest={false} depthWrite={false} />
       </lineSegments>
       <mesh name={`${name}:diagonal`} position={[0, 0, 0.02]} rotation={[0, 0, -Math.PI / 4]} renderOrder={10002} raycast={() => null}>
-        <planeGeometry args={[handleSize * 0.66, 0.018]} />
+        <planeGeometry args={[handleSize * 0.66, 1.8]} />
         <meshBasicMaterial color="#ffffff" depthTest={false} depthWrite={false} />
       </mesh>
     </mesh>

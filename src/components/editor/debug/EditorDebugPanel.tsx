@@ -23,7 +23,15 @@ export function EditorDebugPanel({
         onUpdateObject={onUpdateObject}
         onUpdateStroke={onUpdateStroke}
       />
-      <Leva collapsed={false} hidden={false} />
+      <Leva
+        collapsed={false}
+        hidden={false}
+        titleBar={{
+          drag: true,
+          filter: true,
+          position: { x: 0, y: 120 },
+        }}
+      />
     </>
   );
 }

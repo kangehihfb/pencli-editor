@@ -60,9 +60,9 @@ const PRESET_PEN_COLORS = [
 ];
 
 const PEN_SIZE_OPTIONS = [
-  { label: "가는 펜", value: 0.022, width: 18, height: 1 },
-  { label: "기본 펜", value: 0.035, width: 24, height: 2 },
-  { label: "굵은 펜", value: 0.052, width: 30, height: 3 },
+  { label: "가는 펜", value: 2.2, width: 18, height: 1 },
+  { label: "기본 펜", value: 3.5, width: 24, height: 2 },
+  { label: "굵은 펜", value: 5.2, width: 30, height: 3 },
 ];
 
 const TOOL_TAB_DRAG_LIMIT = {
