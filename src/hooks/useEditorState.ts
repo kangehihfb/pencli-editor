@@ -76,7 +76,7 @@ export function useEditorState() {
   const pendingExamPresetIdRef = useRef<string | null>(null);
   const undoHistoryRef = useRef<HistorySnapshot[]>([]);
   const redoHistoryRef = useRef<HistorySnapshot[]>([]);
-  const [tool, setTool] = useState<Tool>('pen');
+  const [tool, setTool] = useState<Tool>('answer');
   const [penColor, setPenColor] = useState('#183f3a');
   const [penSize, setPenSize] = useState(0.035);
   const [readonly, setReadonly] = useState(false);

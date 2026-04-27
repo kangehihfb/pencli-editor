@@ -97,6 +97,7 @@ export type EditorSceneProps = {
   onTextEditChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
   onTextEditKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onCommitTextEdit: () => void;
+  renderSceneBackground?: boolean;
 };
 
 export function EditorScene({
@@ -129,6 +130,7 @@ export function EditorScene({
   onTextEditChange,
   onTextEditKeyDown,
   onCommitTextEdit,
+  renderSceneBackground = true,
 }: EditorSceneProps) {
   const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
   const { camera, gl, size } = useThree();
@@ -538,7 +540,7 @@ export function EditorScene({
         }}
       />
 
-      <BoardGrid />
+      {renderSceneBackground ? <BoardGrid /> : null}
       <mesh
         name="editor:interaction-plane"
         position={[interactionBounds.centerX, interactionBounds.centerY, -0.4]}
@@ -637,6 +639,7 @@ export function EditorScene({
       </mesh>
 
       {[...objects]
+        .filter((object) => renderSceneBackground || object.id !== activeExamObjectId)
         .sort((a, b) => a.layer - b.layer)
         .map((object) => (
           <WebGLObjectMesh

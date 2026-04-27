@@ -1,4 +1,4 @@
-export type Tool = 'pen' | 'select' | 'erase' | 'pan';
+export type Tool = 'answer' | 'pen' | 'select' | 'erase' | 'pan';
 export type ObjectKind = 'text' | 'image';
 
 export type Point2D = {

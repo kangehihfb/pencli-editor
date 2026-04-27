@@ -5,6 +5,7 @@ import {
   GripVertical,
   Hand,
   ImagePlus,
+  Keyboard,
   MousePointer2,
   PenLine,
   Redo2,
@@ -217,6 +218,13 @@ export function EditorToolbar({
           <span className="toolbar-separator" />
 
           <div className="tool-tab-group">
+            <ToolButton
+              active={tool === "answer"}
+              label="답안 입력"
+              onClick={() => onToolChange("answer")}
+            >
+              <Keyboard size={18} />
+            </ToolButton>
             <ToolButton
               active={tool === "pan"}
               label="손툴"

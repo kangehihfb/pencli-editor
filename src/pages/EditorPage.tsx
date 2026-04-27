@@ -1,10 +1,21 @@
+import { ExamPresentation } from "../components/exam/ExamPresentation";
 import { EditorStage } from "../components/editor/EditorStage";
 import { EditorToolbar } from "../components/editor/EditorToolbar";
-import { EditorDebugPanel } from "../components/editor/debug/EditorDebugPanel";
+import { reactExams } from "../data/reactExams";
 import { useEditorState } from "../hooks/useEditorState";
 
 export function EditorPage() {
   const editor = useEditorState();
+  const handleToolChange = (nextTool: typeof editor.tool) => {
+    editor.setTool(nextTool);
+
+    if (nextTool === "answer") {
+      editor.setSelection(null);
+      editor.setGroupSelection([]);
+      editor.setDragState(null);
+      editor.setResizeState(null);
+    }
+  };
 
   return (
     <main className="whiteboard-shell">
@@ -14,7 +25,7 @@ export function EditorPage() {
         penColor={editor.penColor}
         penSize={editor.penSize}
         imageInputRef={editor.imageInputRef}
-        onToolChange={editor.setTool}
+        onToolChange={handleToolChange}
         onPenColorChange={editor.setPenColor}
         onPenSizeChange={editor.setPenSize}
         onAddText={editor.addText}
@@ -47,6 +58,7 @@ export function EditorPage() {
         drawingBounds={editor.drawingBounds}
         examPresets={editor.examPresets}
         activeExamPresetId={editor.activeExamPresetId}
+        questionContent={<ExamPresentation exam={reactExams[0]} />}
         onSelectExamPreset={editor.selectExamPreset}
         onSelectionChange={editor.setSelection}
         onGroupSelectionChange={editor.setGroupSelection}
@@ -68,12 +80,6 @@ export function EditorPage() {
         onCommitTextEdit={editor.commitTextEdit}
       />
 
-      <EditorDebugPanel
-        selectedObject={editor.selectedObject}
-        selectedStroke={editor.selectedStroke}
-        onUpdateObject={editor.updateObject}
-        onUpdateStroke={editor.updateStroke}
-      />
     </main>
   );
 }

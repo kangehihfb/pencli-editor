@@ -66,9 +66,289 @@ button {
   background: #fff;
 }
 
+.react-exam-preview-shell {
+  position: relative;
+  z-index: 95;
+  grid-row: 2;
+  align-self: stretch;
+  overflow: auto;
+  padding: 28px 64px 36px calc(var(--sidebar-width) + 64px);
+  pointer-events: none;
+}
+
+.react-exam {
+  display: grid;
+  width: min(780px, 100%);
+  height: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 4px 4px 34px;
+  grid-template-rows: auto auto auto 1fr auto;
+  color: #141821;
+  background: #fff;
+  pointer-events: auto;
+}
+
+.react-exam-header {
+  margin-bottom: 72px;
+}
+
+.react-exam-heading,
+.react-exam-title-group,
+.react-exam-header-actions {
+  display: flex;
+  align-items: center;
+}
+
+.react-exam-heading {
+  justify-content: space-between;
+  min-height: 24px;
+}
+
+.react-exam-title-group {
+  gap: 8px;
+}
+
+.react-exam-header-actions {
+  gap: 12px;
+}
+
+.react-exam-category {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 6px;
+  border-radius: 7px;
+  color: #ec5d27;
+  background: #fff1e9;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.react-exam-required {
+  color: #13995e;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.react-exam-question-number {
+  color: #111318;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.react-exam-difficulty {
+  color: #7b8190;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.react-exam-bookmark {
+  display: grid;
+  width: 22px;
+  height: 26px;
+  place-items: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.react-exam-bookmark span {
+  display: block;
+  width: 13px;
+  height: 17px;
+  border: 1.5px solid #c3c9d4;
+  border-bottom: none;
+  border-radius: 3px 3px 1px 1px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%);
+}
+
+.react-exam-header h1,
+.react-exam-header p,
+.react-exam-body p,
+.exam-sub-question-label {
+  margin: 0;
+}
+
+.react-exam-body {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  color: #05070d;
+  font-family:
+    "Times New Roman",
+    "Noto Serif KR",
+    serif;
+  font-size: 26px;
+  letter-spacing: 0;
+  line-height: 1.45;
+}
+
+.react-exam-math {
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: #f6f8fa;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+}
+
+.react-exam-image {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.react-exam-questions {
+  display: grid;
+  gap: 20px;
+  margin-top: 40px;
+}
+
+.exam-sub-question {
+  display: grid;
+  gap: 8px;
+}
+
+.exam-sub-question-label {
+  font-weight: 800;
+}
+
+.exam-answer-list,
+.exam-choice-list {
+  display: flex;
+  justify-content: space-between;
+  gap: 28px;
+  margin-bottom: 64px;
+}
+
+.exam-answer-input {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid #c8d0d9;
+  border-radius: 6px;
+  color: #1f2933;
+  background: #fff;
+  font-size: 16px;
+}
+
+.exam-answer-input:focus {
+  border-color: #2da66f;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(45, 166, 111, 0.14);
+}
+
+.exam-choice-button {
+  display: inline-grid;
+  align-items: center;
+  grid-template-columns: auto auto;
+  gap: 12px;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  color: #05070d;
+  background: transparent;
+  font-family:
+    "Times New Roman",
+    "Noto Serif KR",
+    serif;
+  font-size: 25px;
+  line-height: 1;
+  text-align: center;
+}
+
+.exam-choice-button span {
+  display: grid;
+  width: auto;
+  height: auto;
+  place-items: center;
+  color: #05070d;
+  background: transparent;
+  font-family:
+    "Pretendard",
+    "Noto Sans KR",
+    sans-serif;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.exam-choice-button.active {
+  color: #05070d;
+}
+
+.exam-choice-button.active span {
+  color: #05070d;
+  background: transparent;
+}
+
+.exam-answer-review-list {
+  display: grid;
+  gap: 12px;
+  padding-left: 4px;
+}
+
+.exam-answer-review-row {
+  display: grid;
+  align-items: center;
+  grid-template-columns: 28px 1fr auto;
+  min-height: 24px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #05070d;
+  background: transparent;
+  text-align: left;
+}
+
+.exam-answer-review-row.active {
+  min-height: 36px;
+  padding-right: 10px;
+  border-color: #dfe3e9;
+  background: #fafbfc;
+}
+
+.exam-answer-review-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: #05070d;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.exam-answer-review-label {
+  color: #111318;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.react-exam-submit-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 36px;
+  padding-right: 4px;
+  color: #768092;
+  font-size: 14px;
+}
+
+.react-exam-checkmark {
+  color: #24a66c;
+  font-size: 26px;
+  line-height: 1;
+}
+
 .whiteboard-toolbar {
   position: relative;
-  z-index: 60;
+  z-index: 120;
+  grid-row: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -220,7 +500,7 @@ button {
   position: fixed;
   top: 122px;
   left: calc(var(--sidebar-width) + ((100vw - var(--sidebar-width)) / 2));
-  z-index: 70;
+  z-index: 130;
   display: block;
   transform: translate(
     calc(-50% + var(--tool-tab-x, 0px)),
@@ -450,6 +730,7 @@ button {
 
 .stage {
   position: relative;
+  grid-row: 2;
   overflow: hidden;
   background:
     linear-gradient(
@@ -465,7 +746,7 @@ button {
   display: block;
   width: 100% !important;
   height: 100% !important;
-  background: #fff;
+  background: transparent;
   touch-action: none;
 }
 
@@ -482,12 +763,59 @@ button {
 }
 
 .stage-canvas-shell {
+  position: relative;
   width: min(100%, calc((100vh - 240px) * var(--exam-aspect, 1)));
   max-height: 100%;
   aspect-ratio: var(--exam-aspect, 1);
   overflow: hidden;
   background: #fff;
   pointer-events: auto;
+}
+
+.stage-react-exam-layer,
+.stage-canvas-overlay,
+.stage-handwriting-preview {
+  position: absolute;
+  inset: 0;
+}
+
+.stage-react-exam-layer {
+  z-index: 1;
+  overflow: hidden;
+  background: #fff;
+}
+
+.stage-react-exam-layer .react-exam {
+  width: 100%;
+  min-height: 0;
+}
+
+.stage-canvas-overlay {
+  z-index: 2;
+}
+
+.stage-handwriting-preview {
+  z-index: 2;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.stage-object-preview-text {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #1f2a44;
+  font:
+    700 58px -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .stage-topbar {
@@ -776,7 +1104,7 @@ button {
 
 #leva__root,
 #leva__root > div {
-  z-index: 2147483647 !important;
+  pointer-events: none;
 }
 
 .r3f-perf-debug {
@@ -784,8 +1112,7 @@ button {
   right: auto !important;
   bottom: 16px !important;
   left: 16px !important;
-  z-index: 2147483646 !important;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .text-edit-overlay {
@@ -906,7 +1233,7 @@ button {
 
 @media (max-width: 640px) {
   :root {
-    --sidebar-width: 176px;
+    --sidebar-width: 0px;
   }
 
   .lesson-header-actions {
@@ -932,13 +1259,39 @@ button {
   }
 
   .exam-library-panel {
-    padding-right: 10px;
-    padding-left: 10px;
+    display: none;
   }
 
   .stage-canvas-frame {
     right: 10px;
-    left: calc(var(--sidebar-width) + 10px);
+    left: 10px;
+  }
+
+  .stage-canvas-shell {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+  }
+
+  .react-exam {
+    padding: 4px 14px 24px;
+  }
+
+  .react-exam-header {
+    margin-bottom: 48px;
+  }
+
+  .react-exam-body {
+    font-size: 22px;
+  }
+
+  .react-exam-questions {
+    margin-top: 32px;
+  }
+
+  .exam-choice-list {
+    gap: 14px;
+    margin-bottom: 44px;
   }
 
   .study-progress-label,
