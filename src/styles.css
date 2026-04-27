@@ -759,7 +759,7 @@ button {
   z-index: 90;
   display: grid;
   place-items: center;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .stage-canvas-frame.is-fixed-page {
@@ -814,7 +814,8 @@ button {
 .stage-react-exam-page {
   width: var(--stage-page-width);
   height: var(--stage-page-height);
-  transform: scale(var(--stage-page-scale));
+  zoom: var(--stage-page-scale);
+  transform: none;
   transform-origin: top left;
 }
 
@@ -849,6 +850,16 @@ button {
 
 .stage-canvas-overlay {
   z-index: 2;
+}
+
+.stage-canvas-frame.is-question-interactive .stage-react-exam-layer {
+  z-index: 3;
+  background: transparent;
+  pointer-events: auto;
+}
+
+.stage-canvas-frame.is-question-interactive .react-exam {
+  background: transparent;
 }
 
 .stage-canvas-overlay.is-pass-through {

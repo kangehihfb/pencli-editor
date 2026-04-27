@@ -93,31 +93,87 @@ async function inlineImages(clone: HTMLElement) {
   );
 }
 
+function waitForFrame() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
+async function createUnscaledMeasuredClone(
+  element: HTMLElement,
+  width: number,
+  height: number,
+) {
+  const measurementFrame = document.createElement('div');
+  measurementFrame.className = 'stage-canvas-frame is-fixed-page';
+  measurementFrame.style.position = 'fixed';
+  measurementFrame.style.left = '-100000px';
+  measurementFrame.style.right = 'auto';
+  measurementFrame.style.top = '0';
+  measurementFrame.style.bottom = 'auto';
+  measurementFrame.style.width = `${width}px`;
+  measurementFrame.style.height = `${height}px`;
+  measurementFrame.style.overflow = 'hidden';
+  measurementFrame.style.pointerEvents = 'none';
+  measurementFrame.style.setProperty('--exam-aspect', String(width / height));
+  measurementFrame.style.setProperty('--stage-page-width', `${width}px`);
+  measurementFrame.style.setProperty('--stage-page-height', `${height}px`);
+  measurementFrame.style.setProperty('--stage-page-scale', '1');
+
+  const measurementShell = document.createElement('div');
+  measurementShell.className = 'stage-page-scale-box';
+  const measurementCanvasShell = document.createElement('div');
+  measurementCanvasShell.className = 'stage-canvas-shell';
+  const measurementLayer = document.createElement('div');
+  measurementLayer.className = 'stage-react-exam-layer';
+  const measurementPage = element.cloneNode(true) as HTMLElement;
+
+  measurementLayer.appendChild(measurementPage);
+  measurementCanvasShell.appendChild(measurementLayer);
+  measurementShell.appendChild(measurementCanvasShell);
+  measurementFrame.appendChild(measurementShell);
+  document.body.appendChild(measurementFrame);
+
+  await waitForFrame();
+
+  return {
+    measuredElement: measurementPage,
+    dispose: () => measurementFrame.remove(),
+  };
+}
+
 async function renderElementToImage(
   element: HTMLElement,
   width: number,
   height: number,
 ) {
-  const clone = element.cloneNode(true) as HTMLElement;
-  clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-  inlineComputedStyles(element, clone);
-  await inlineImages(clone);
+  const measured = await createUnscaledMeasuredClone(element, width, height);
 
-  clone.style.width = `${width}px`;
-  clone.style.height = `${height}px`;
-  clone.style.transform = 'none';
-  clone.style.transformOrigin = 'top left';
+  try {
+    const clone = measured.measuredElement.cloneNode(true) as HTMLElement;
+    clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+    inlineComputedStyles(measured.measuredElement, clone);
+    await inlineImages(clone);
 
-  const markup = new XMLSerializer().serializeToString(clone);
-  const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
-    `<foreignObject x="0" y="0" width="${width}" height="${height}">`,
-    markup,
-    '</foreignObject>',
-    '</svg>',
-  ].join('');
+    clone.style.width = `${width}px`;
+    clone.style.height = `${height}px`;
+    clone.style.setProperty('zoom', '1');
+    clone.style.transform = 'none';
+    clone.style.transformOrigin = 'top left';
 
-  return loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+    const markup = new XMLSerializer().serializeToString(clone);
+    const svg = [
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+      `<foreignObject x="0" y="0" width="${width}" height="${height}">`,
+      markup,
+      '</foreignObject>',
+      '</svg>',
+    ].join('');
+
+    return loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+  } finally {
+    measured.dispose();
+  }
 }
 
 function downloadBlob(blob: Blob, filename: string) {

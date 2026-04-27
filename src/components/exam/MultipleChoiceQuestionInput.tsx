@@ -15,6 +15,14 @@ export function MultipleChoiceQuestionInput({
   onSelect,
   submitted = false,
 }: MultipleChoiceQuestionInputProps) {
+  const handlePointerSelect = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    event.stopPropagation();
+    onSelect(index);
+  };
+
   return (
     <section className="exam-sub-question exam-multiple-choice-question">
       {subQuestion.prompt ? (
@@ -31,6 +39,7 @@ export function MultipleChoiceQuestionInput({
                 : 'exam-choice-button'
             }
             type="button"
+            onPointerDown={(event) => handlePointerSelect(event, index)}
             onClick={() => onSelect(index)}
           >
             <span>{circledNumbers[index] ?? index + 1}</span>
@@ -51,6 +60,7 @@ export function MultipleChoiceQuestionInput({
                   : 'exam-answer-review-row'
               }
               type="button"
+              onPointerDown={(event) => handlePointerSelect(event, index)}
               onClick={() => onSelect(index)}
             >
               <span className="exam-answer-review-number">

@@ -47,7 +47,8 @@ export function EditorStage({
     "--stage-page-scale": String(stagePageScale),
   } as CSSProperties;
   const shouldPassPointerToQuestion =
-    Boolean(questionContent) && sceneProps.tool === "answer";
+    Boolean(questionContent) &&
+    (sceneProps.tool === "answer" || (usesFixedPage && sceneProps.tool === "pan"));
 
   useEffect(() => {
     if (!usesFixedPage) {
@@ -129,7 +130,13 @@ export function EditorStage({
       </div>
       <div
         ref={frameRef}
-        className={usesFixedPage ? "stage-canvas-frame is-fixed-page" : "stage-canvas-frame"}
+        className={[
+          "stage-canvas-frame",
+          usesFixedPage ? "is-fixed-page" : "",
+          shouldPassPointerToQuestion ? "is-question-interactive" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         style={canvasFrameStyle}
       >
         <div className={usesFixedPage ? "stage-page-scale-box" : "stage-page-scale-box is-fluid"}>
