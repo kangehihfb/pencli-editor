@@ -1,7 +1,7 @@
 import type { PointBounds } from '../types/editor';
 
-export const PAGE_WIDTH = 1000;
-export const PAGE_HEIGHT = 760;
+export const PAGE_WIDTH = 1024;
+export const PAGE_HEIGHT = 768;
 
 export const PAGE_BOUNDS: PointBounds = {
   minX: 0,

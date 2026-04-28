@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { ExamPreset } from "../../data/examPresets";
 import { exportPageImage } from "../../lib/exportPageImage";
+import { downloadClientPageExportComparison } from "../../lib/pageExportMethods";
 import { PAGE_HEIGHT, PAGE_WIDTH } from "../../lib/pageGeometry";
 import { PerformanceMonitor } from "./PerformanceMonitor";
 import { EditorScene } from "./scene/EditorScene";
@@ -17,6 +18,7 @@ type EditorStageProps = EditorSceneProps & {
   questionContent?: ReactNode;
   pageZoom?: number;
   exportRequestId?: number;
+  comparisonExportRequestId?: number;
 };
 
 export function EditorStage({
@@ -26,6 +28,7 @@ export function EditorStage({
   questionContent,
   pageZoom = 1,
   exportRequestId = 0,
+  comparisonExportRequestId = 0,
   ...sceneProps
 }: EditorStageProps) {
   const frameRef = useRef<HTMLDivElement>(null);
@@ -102,6 +105,8 @@ export function EditorStage({
           webglCanvas,
           width: PAGE_WIDTH,
           height: PAGE_HEIGHT,
+          pageZoom,
+          stagePageScale,
         })
           .catch((error) => {
             console.error(error);
@@ -116,7 +121,54 @@ export function EditorStage({
       cancelled = true;
       setIsExporting(false);
     };
-  }, [exportRequestId, usesFixedPage]);
+  }, [exportRequestId, pageZoom, stagePageScale, usesFixedPage]);
+
+  useEffect(() => {
+    if (!comparisonExportRequestId || !usesFixedPage) return;
+
+    let cancelled = false;
+    setIsExporting(true);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+
+        const frame = frameRef.current;
+        const pageElement = frame?.querySelector<HTMLElement>(".stage-react-exam-page");
+        const webglCanvas = frame?.querySelector<HTMLCanvasElement>(
+          "canvas.stage-canvas, .stage-canvas canvas, canvas",
+        );
+        if (!pageElement || !webglCanvas) {
+          setIsExporting(false);
+          return;
+        }
+
+        downloadClientPageExportComparison({
+          pageElement,
+          webglCanvas,
+          width: PAGE_WIDTH,
+          height: PAGE_HEIGHT,
+          pageZoom,
+          stagePageScale,
+          editorState: {
+            strokes: sceneProps.strokes,
+            objects: sceneProps.objects,
+          },
+        })
+          .catch((error) => {
+            console.error(error);
+          })
+          .finally(() => {
+            setIsExporting(false);
+          });
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      setIsExporting(false);
+    };
+  }, [comparisonExportRequestId, pageZoom, stagePageScale, usesFixedPage]);
 
   return (
     <section className="stage">

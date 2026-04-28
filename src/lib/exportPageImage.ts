@@ -1,12 +1,42 @@
-type ExportPageImageOptions = {
+import type { Stroke, WebGLObject } from '../types/editor';
+
+export type PageExportState = {
+  strokes: Stroke[];
+  objects: WebGLObject[];
+};
+
+export type PageExportSource = {
   pageElement: HTMLElement;
   webglCanvas: HTMLCanvasElement;
   width: number;
   height: number;
+  pageZoom?: number;
+  stagePageScale?: number;
+  editorState?: PageExportState;
+};
+
+export type ExportPageImageOptions = PageExportSource & {
   filename?: string;
 };
 
-function loadImage(src: string) {
+export type PageExportMethod =
+  | 'current-foreign-object'
+  | 'html-to-image'
+  | 'modern-screenshot'
+  | 'html2canvas'
+  | 'dom-to-image-more'
+  | 'playwright-screenshot';
+
+export type PageExportResult = {
+  method: PageExportMethod;
+  canvas: HTMLCanvasElement;
+  blob: Blob;
+  width: number;
+  height: number;
+  durationMs: number;
+};
+
+export function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
@@ -15,7 +45,7 @@ function loadImage(src: string) {
   });
 }
 
-function canvasToBlob(canvas: HTMLCanvasElement) {
+export function canvasToBlob(canvas: HTMLCanvasElement) {
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (!blob) {
@@ -65,13 +95,44 @@ function inlineComputedStyles(source: HTMLElement, clone: HTMLElement) {
   });
 }
 
-async function blobToDataUrl(blob: Blob) {
+export async function blobToDataUrl(blob: Blob) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(new Error('Failed to read image blob.'));
     reader.readAsDataURL(blob);
   });
+}
+
+async function resolveExportImageSrc(imageSrc?: string) {
+  if (!imageSrc || imageSrc.startsWith('data:')) {
+    return imageSrc;
+  }
+
+  if (!imageSrc.startsWith('blob:')) {
+    return imageSrc;
+  }
+
+  const response = await fetch(imageSrc);
+  const blob = await response.blob();
+  return blobToDataUrl(blob);
+}
+
+export async function createSerializablePageExportState(
+  state: PageExportState,
+): Promise<PageExportState> {
+  return {
+    strokes: state.strokes.map((stroke) => ({
+      ...stroke,
+      points: stroke.points.map((point) => ({ ...point })),
+    })),
+    objects: await Promise.all(
+      state.objects.map(async (object) => ({
+        ...object,
+        imageSrc: await resolveExportImageSrc(object.imageSrc),
+      })),
+    ),
+  };
 }
 
 async function inlineImages(clone: HTMLElement) {
@@ -99,7 +160,7 @@ function waitForFrame() {
   });
 }
 
-async function createUnscaledMeasuredClone(
+export async function createUnscaledMeasuredClone(
   element: HTMLElement,
   width: number,
   height: number,
@@ -142,7 +203,7 @@ async function createUnscaledMeasuredClone(
   };
 }
 
-async function renderElementToImage(
+export async function renderElementToImage(
   element: HTMLElement,
   width: number,
   height: number,
@@ -176,7 +237,7 @@ async function renderElementToImage(
   }
 }
 
-function downloadBlob(blob: Blob, filename: string) {
+export function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -187,13 +248,12 @@ function downloadBlob(blob: Blob, filename: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export async function exportPageImage({
+export async function createCurrentPageExportCanvas({
   pageElement,
   webglCanvas,
   width,
   height,
-  filename = 'exam-with-handwriting.png',
-}: ExportPageImageOptions) {
+}: PageExportSource) {
   const exportCanvas = document.createElement('canvas');
   exportCanvas.width = width;
   exportCanvas.height = height;
@@ -211,7 +271,35 @@ export async function exportPageImage({
   const webglImage = await loadImage(webglCanvas.toDataURL('image/png'));
   context.drawImage(webglImage, 0, 0, width, height);
 
-  const blob = await canvasToBlob(exportCanvas);
-  downloadBlob(blob, filename);
-  console.info(`Exported ${filename} (${width}x${height})`);
+  return exportCanvas;
+}
+
+export async function createCurrentPageExportBlob(options: PageExportSource) {
+  const canvas = await createCurrentPageExportCanvas(options);
+  return canvasToBlob(canvas);
+}
+
+export async function createCurrentPageExportResult(options: PageExportSource): Promise<PageExportResult> {
+  const startedAt = performance.now();
+  const canvas = await createCurrentPageExportCanvas(options);
+  const blob = await canvasToBlob(canvas);
+
+  return {
+    method: 'current-foreign-object',
+    canvas,
+    blob,
+    width: options.width,
+    height: options.height,
+    durationMs: performance.now() - startedAt,
+  };
+}
+
+export async function exportPageImage({
+  filename = 'exam-with-handwriting.png',
+  ...source
+}: ExportPageImageOptions) {
+  const result = await createCurrentPageExportResult(source);
+  downloadBlob(result.blob, filename);
+  console.info(`Exported ${filename} (${result.width}x${result.height}) in ${result.durationMs.toFixed(1)}ms`);
+  return result;
 }

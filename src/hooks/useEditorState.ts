@@ -16,9 +16,11 @@ import type {
 } from '../types/editor';
 import { examPresets } from '../data/examPresets';
 import { getGroupResizeScale, getNextStrokePoints, getObjectBounds, getPointBounds, getSelectionItemsBounds, makeId } from '../lib/sceneMath';
+import type { PageExportState } from '../lib/exportPageImage';
 
 const activeExamObjectId = 'object_exam_active';
 const maxHistorySize = 80;
+const exportStateStorageKey = '__page_export_state__';
 
 type HistorySnapshot = {
   strokes: Stroke[];
@@ -35,6 +37,23 @@ function cloneStrokes(items: Stroke[]) {
 
 function cloneObjects(items: WebGLObject[]) {
   return items.map((object) => ({ ...object }));
+}
+
+function readInjectedExportState(): PageExportState | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const rawState = window.localStorage.getItem(exportStateStorageKey);
+    if (!rawState) return null;
+    const parsed = JSON.parse(rawState) as Partial<PageExportState>;
+    if (!Array.isArray(parsed.strokes) || !Array.isArray(parsed.objects)) return null;
+    return {
+      strokes: cloneStrokes(parsed.strokes as Stroke[]),
+      objects: cloneObjects(parsed.objects as WebGLObject[]),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -72,6 +91,7 @@ function moveStrokePoints(points: Point2D[], delta: Point2D) {
 }
 
 export function useEditorState(drawingBoundsOverride: PointBounds | null = null) {
+  const injectedExportStateRef = useRef<PageExportState | null>(readInjectedExportState());
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pendingExamPresetIdRef = useRef<string | null>(null);
   const undoHistoryRef = useRef<HistorySnapshot[]>([]);
@@ -87,8 +107,8 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
   const [editingText, setEditingText] = useState<EditingText>(null);
   const [activeStrokeId, setActiveStrokeId] = useState<string | null>(null);
   const [zoomCommand, setZoomCommand] = useState<ZoomCommand | null>(null);
-  const [strokes, setStrokes] = useState<Stroke[]>([]);
-  const [objects, setObjects] = useState<WebGLObject[]>([]);
+  const [strokes, setStrokes] = useState<Stroke[]>(() => injectedExportStateRef.current?.strokes ?? []);
+  const [objects, setObjects] = useState<WebGLObject[]>(() => injectedExportStateRef.current?.objects ?? []);
   const [activeExamPresetId, setActiveExamPresetId] = useState<string | null>(null);
   const [historyRevision, setHistoryRevision] = useState(0);
 
@@ -329,6 +349,8 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
   };
 
   useEffect(() => {
+    if (injectedExportStateRef.current) return;
+
     const firstPresetId = examPresets[0]?.id;
     if (firstPresetId) {
       selectExamPreset(firstPresetId);
