@@ -800,13 +800,12 @@ button {
 }
 
 .stage-react-exam-layer,
-.stage-canvas-overlay {
+.stage-ink-layer {
   position: absolute;
   inset: 0;
 }
 
 .stage-react-exam-layer {
-  z-index: 1;
   overflow: hidden;
   background: #fff;
 }
@@ -848,22 +847,13 @@ button {
   margin-bottom: 64px;
 }
 
-.stage-canvas-overlay {
-  z-index: 2;
-}
-
-.stage-canvas-frame.is-question-interactive .stage-react-exam-layer {
-  z-index: 3;
-  background: transparent;
-  pointer-events: auto;
-}
-
-.stage-canvas-frame.is-question-interactive .react-exam {
-  background: transparent;
-}
-
-.stage-canvas-overlay.is-pass-through {
+.stage-ink-layer.is-passive,
+.stage-ink-layer.is-passive * {
   pointer-events: none;
+}
+
+.stage-ink-layer:not(.is-passive) {
+  pointer-events: auto;
 }
 
 .stage-object-preview-text {

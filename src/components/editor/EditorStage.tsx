@@ -52,6 +52,7 @@ export function EditorStage({
   const shouldPassPointerToQuestion =
     Boolean(questionContent) &&
     (sceneProps.tool === "answer" || (usesFixedPage && sceneProps.tool === "pan"));
+  const isInkPassive = shouldPassPointerToQuestion;
 
   useEffect(() => {
     if (!usesFixedPage) {
@@ -192,21 +193,25 @@ export function EditorStage({
         style={canvasFrameStyle}
       >
         <div className={usesFixedPage ? "stage-page-scale-box" : "stage-page-scale-box is-fluid"}>
-        <div className="stage-canvas-shell">
-          {questionContent ? (
-            <div className="stage-react-exam-layer">
-              <div className="stage-react-exam-page">
-                {questionContent}
+          <div className="stage-canvas-shell">
+            {questionContent ? (
+              <div className="stage-react-exam-layer">
+                <div className="stage-react-exam-page">
+                  {questionContent}
+                </div>
               </div>
-            </div>
-          ) : null}
-          <div className={shouldPassPointerToQuestion ? "stage-canvas-overlay is-pass-through" : "stage-canvas-overlay"}>
+            ) : null}
+            <div
+              className={isInkPassive ? "stage-ink-layer is-passive" : "stage-ink-layer"}
+              style={isInkPassive ? { pointerEvents: "none" } : undefined}
+            >
               <Canvas
-                className="stage-canvas"
+                className="stage-canvas stage-ink-canvas"
                 dpr={[1, 2]}
                 gl={{ alpha: true, preserveDrawingBuffer: true }}
+                style={isInkPassive ? { pointerEvents: "none" } : undefined}
               >
-                <PerformanceMonitor />
+                {!isInkPassive ? <PerformanceMonitor /> : null}
                 <OrthographicCamera
                   makeDefault
                   position={[0, 0, 7]}
@@ -218,13 +223,14 @@ export function EditorStage({
                 <ambientLight intensity={1.4} />
                 <EditorScene
                   {...sceneProps}
-                  hideEditorChrome={isExporting}
+                  readonly={isInkPassive || sceneProps.readonly}
+                  hideEditorChrome={isInkPassive || isExporting}
                   renderSceneBackground={!questionContent}
                   viewportLocked={usesFixedPage}
                 />
               </Canvas>
             </div>
-        </div>
+          </div>
         </div>
       </div>
       <ExamLibraryOverlay

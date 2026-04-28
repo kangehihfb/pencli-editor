@@ -53,7 +53,6 @@ export function MultipleChoiceQuestionInput({
           {subQuestion.choices.map((_, index) => (
             <button
               key={index}
-              data-exam-click-through="true"
               className={
                 selectedIndex === index
                   ? 'exam-answer-review-row active'
