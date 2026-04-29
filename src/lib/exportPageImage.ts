@@ -21,10 +21,7 @@ export type ExportPageImageOptions = PageExportSource & {
 
 export type PageExportMethod =
   | 'current-foreign-object'
-  | 'html-to-image'
   | 'modern-screenshot'
-  | 'html2canvas'
-  | 'dom-to-image-more'
   | 'playwright-screenshot';
 
 export type PageExportResult = {
