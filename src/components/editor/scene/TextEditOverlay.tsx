@@ -32,19 +32,21 @@ export function TextEditOverlay({ object, value, onChange, onKeyDown, onBlur }: 
       position={[object.x, object.y, layerToZ(object.layer) + 0.08]}
       center
       occlude={false}
-      zIndexRange={[100, 0]}
+      zIndexRange={[1_000_000, 0]}
       style={{ pointerEvents: 'auto' }}
     >
-      <textarea
-        className="text-edit-overlay"
-        data-scene-name={overlayName}
-        style={{ width: `${overlayWidth}px`, height: `${overlayHeight}px` }}
-        value={value}
-        autoFocus
-        onChange={onChange}
-        onKeyDown={onKeyDown}
-        onBlur={onBlur}
-      />
+      <div className="text-edit-overlay-wrap" style={{ transform: `rotate(${object.rotation ?? 0}deg)` }}>
+        <textarea
+          className="text-edit-overlay"
+          data-scene-name={overlayName}
+          style={{ width: `${overlayWidth}px`, height: `${overlayHeight}px` }}
+          value={value}
+          autoFocus
+          onChange={onChange}
+          onKeyDown={onKeyDown}
+          onBlur={onBlur}
+        />
+      </div>
     </Html>
   );
 }

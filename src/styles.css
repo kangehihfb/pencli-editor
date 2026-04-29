@@ -806,6 +806,7 @@ button {
 }
 
 .stage-react-exam-layer {
+  z-index: 1;
   overflow: hidden;
   background: #fff;
 }
@@ -847,12 +848,17 @@ button {
   margin-bottom: 64px;
 }
 
+.stage-ink-layer.is-passive {
+  z-index: 3;
+}
+
 .stage-ink-layer.is-passive,
 .stage-ink-layer.is-passive * {
   pointer-events: none;
 }
 
 .stage-ink-layer:not(.is-passive) {
+  z-index: 4;
   pointer-events: auto;
 }
 
@@ -1178,7 +1184,15 @@ button {
   z-index: 140 !important;
 }
 
+.text-edit-overlay-wrap {
+  position: relative;
+  z-index: 1000000;
+  pointer-events: auto;
+  transform-origin: center center;
+}
+
 .text-edit-overlay {
+  display: block;
   width: 220px;
   border: none;
   border-radius: 0;
