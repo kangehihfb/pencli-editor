@@ -261,6 +261,69 @@ export function getResizedObjectRect(
   };
 }
 
+export function getUniformResizedObjectRect(
+  handle: ResizeHandle,
+  origin: Extract<ResizeState, { type: 'object' }>['origin'],
+  point: Point2D,
+  minScale = 0.2,
+) {
+  const safeWidth = Math.max(origin.width, 0.001);
+  const safeHeight = Math.max(origin.height, 0.001);
+  const rotation = origin.rotation ?? 0;
+  const originCenter = { x: origin.x, y: origin.y };
+  const originPointerLocal = getLocalPoint(origin.pointer, originCenter, rotation);
+  const pointLocal = getLocalPoint(point, originCenter, rotation);
+  const bounds: PointBounds = {
+    minX: -origin.width / 2,
+    maxX: origin.width / 2,
+    minY: -origin.height / 2,
+    maxY: origin.height / 2,
+    centerX: 0,
+    centerY: 0,
+    width: origin.width,
+    height: origin.height,
+  };
+  const delta = {
+    x: pointLocal.x - originPointerLocal.x,
+    y: pointLocal.y - originPointerLocal.y,
+  };
+
+  if (isCornerResizeHandle(handle)) {
+    const nextRect = getUniformResizedBoundsRect(handle, bounds, delta, minScale);
+    const nextCenter = rotatePoint({ x: origin.x + nextRect.x, y: origin.y + nextRect.y }, originCenter, rotation);
+    return {
+      ...nextRect,
+      x: nextCenter.x,
+      y: nextCenter.y,
+    };
+  }
+
+  let scale = 1;
+  let localCenter = { x: 0, y: 0 };
+
+  if (handle === 'e') {
+    scale = Math.max(minScale, (origin.width + delta.x) / safeWidth);
+    localCenter = { x: -origin.width / 2 + (origin.width * scale) / 2, y: 0 };
+  } else if (handle === 'w') {
+    scale = Math.max(minScale, (origin.width - delta.x) / safeWidth);
+    localCenter = { x: origin.width / 2 - (origin.width * scale) / 2, y: 0 };
+  } else if (handle === 's') {
+    scale = Math.max(minScale, (origin.height + delta.y) / safeHeight);
+    localCenter = { x: 0, y: -origin.height / 2 + (origin.height * scale) / 2 };
+  } else if (handle === 'n') {
+    scale = Math.max(minScale, (origin.height - delta.y) / safeHeight);
+    localCenter = { x: 0, y: origin.height / 2 - (origin.height * scale) / 2 };
+  }
+
+  const nextCenter = rotatePoint({ x: origin.x + localCenter.x, y: origin.y + localCenter.y }, originCenter, rotation);
+  return {
+    x: nextCenter.x,
+    y: nextCenter.y,
+    width: origin.width * scale,
+    height: origin.height * scale,
+  };
+}
+
 export function getResizedStrokePoints(
   handle: ResizeHandle,
   origin: Extract<ResizeState, { type: 'stroke' }>['origin'],

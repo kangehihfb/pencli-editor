@@ -259,7 +259,7 @@ export function EditorToolbar({
 
           <span className="toolbar-separator" />
 
-          <div className="tool-tab-group color-group" aria-label="펜 색상">
+          <div className="tool-tab-group color-group" aria-label="색상">
             {PRESET_PEN_COLORS.map((color) => (
               <button
                 key={color}
@@ -270,8 +270,8 @@ export function EditorToolbar({
                 }
                 style={{ backgroundColor: color }}
                 type="button"
-                aria-label={`${color} 펜 색상`}
-                title={`${color} 펜 색상`}
+                aria-label={`${color} 색상`}
+                title={`${color} 색상`}
                 onClick={() => onPenColorChange(color)}
               />
             ))}
@@ -281,7 +281,7 @@ export function EditorToolbar({
                 type="color"
                 value={penColor}
                 onChange={(event) => onPenColorChange(event.target.value)}
-                aria-label="사용자 펜 색상"
+                aria-label="사용자 색상"
               />
             </label>
           </div>

@@ -2,7 +2,7 @@ import { OrbitControls } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
 import type { ThreeEvent } from '@react-three/fiber';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, ElementRef, KeyboardEvent } from 'react';
+import type { ElementRef, FocusEvent, KeyboardEvent } from 'react';
 import * as THREE from 'three';
 import {
   getBoundsFromPoints,
@@ -18,6 +18,7 @@ import {
   getSceneHits,
   getSelectionItemsBounds,
   getStrokeSelectionThreshold,
+  getUniformResizedObjectRect,
   isPointInBounds,
   isPointInRotatedBounds,
   isPointInRotationHandle,
@@ -143,9 +144,8 @@ export type EditorSceneProps = {
   onResizeGroup: (origin: GroupResizeOrigin, point: Point2D) => void;
   onEraseStroke: (id: string) => void;
   onStartTextEdit: (object: WebGLObject) => void;
-  onTextEditChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
   onTextEditKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  onCommitTextEdit: () => void;
+  onCommitTextEdit: (value?: string) => void;
   hideEditorChrome?: boolean;
   renderSceneBackground?: boolean;
   renderVisualLayer?: boolean;
@@ -185,7 +185,6 @@ export function EditorScene({
   onResizeGroup,
   onEraseStroke,
   onStartTextEdit,
-  onTextEditChange,
   onTextEditKeyDown,
   onCommitTextEdit,
   hideEditorChrome = false,
@@ -432,7 +431,12 @@ export function EditorScene({
     (currentResizeState: ResizeState, point: Point2D) => {
       if (!currentResizeState) return false;
       if (currentResizeState.type === 'object') {
-        onResizeObject(currentResizeState.id, getResizedObjectRect(currentResizeState.handle, currentResizeState.origin, point));
+        onResizeObject(
+          currentResizeState.id,
+          currentResizeState.origin.kind === 'text'
+            ? getUniformResizedObjectRect(currentResizeState.handle, currentResizeState.origin, point, 0.25)
+            : getResizedObjectRect(currentResizeState.handle, currentResizeState.origin, point),
+        );
         return true;
       }
 
@@ -566,6 +570,9 @@ export function EditorScene({
             width: object.width,
             height: object.height,
             rotation: object.rotation ?? 0,
+            kind: object.kind,
+            fontSize: object.fontSize,
+            text: object.text,
           })),
         strokes: strokes
           .filter((stroke) => strokeIds.has(stroke.id))
@@ -652,6 +659,8 @@ export function EditorScene({
         width: object.width,
         height: object.height,
         rotation: object.rotation ?? 0,
+        kind: object.kind,
+        fontSize: object.fontSize,
       },
     });
   };
@@ -1055,9 +1064,8 @@ export function EditorScene({
                 key={object.id}
                 object={object}
                 value={editingText.value}
-                onChange={onTextEditChange}
                 onKeyDown={onTextEditKeyDown}
-                onBlur={onCommitTextEdit}
+                onBlur={(event: FocusEvent<HTMLTextAreaElement>) => onCommitTextEdit(event.currentTarget.value)}
               />
             ))
         : null}

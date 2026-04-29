@@ -36,11 +36,11 @@ export function EditorPage() {
       <EditorToolbar
         tool={editor.tool}
         readonly={editor.readonly}
-        penColor={editor.penColor}
+        penColor={editor.activeColor}
         penSize={editor.penSize}
         imageInputRef={editor.imageInputRef}
         onToolChange={handleToolChange}
-        onPenColorChange={editor.setPenColor}
+        onPenColorChange={editor.applyColor}
         onPenSizeChange={editor.setPenSize}
         onAddText={editor.addText}
         onAddImage={editor.addImage}
@@ -98,7 +98,6 @@ export function EditorPage() {
         onResizeGroup={editor.resizeGroup}
         onEraseStroke={editor.eraseStroke}
         onStartTextEdit={editor.startTextEdit}
-        onTextEditChange={editor.updateTextEdit}
         onTextEditKeyDown={editor.handleTextEditKeyDown}
         onCommitTextEdit={editor.commitTextEdit}
       />

@@ -41,10 +41,13 @@ export function WebGLObjectMesh({
         text: object.text ?? '',
         width: object.width,
         height: object.height,
+        fontSize: object.fontSize,
+        color: object.color,
       });
     }
     return null;
-  }, [object.height, object.imageBackground, object.imageSrc, object.kind, object.text, object.width]);
+  }, [object.color, object.fontSize, object.height, object.imageBackground, object.imageSrc, object.kind, object.text, object.width]);
+  const shouldRenderVisual = renderVisual && !editing;
 
   return (
     <group name={objectSceneName} position={[object.x, object.y, layerToZ(object.layer)]} rotation={[0, 0, THREE.MathUtils.degToRad(object.rotation ?? 0)]}>
@@ -53,7 +56,7 @@ export function WebGLObjectMesh({
         renderOrder={object.layer * 10}
         onPointerDown={isExamImage ? undefined : onSelect}
         onDoubleClick={
-          isExamImage
+          isExamImage || object.kind !== 'text'
             ? undefined
             : (event) => {
                 event.stopPropagation();
@@ -64,18 +67,18 @@ export function WebGLObjectMesh({
       >
         <planeGeometry args={[object.width, object.height]} />
         <meshBasicMaterial
-          map={renderVisual ? texture : undefined}
-          colorWrite={renderVisual}
-          opacity={renderVisual ? 1 : 0}
+          map={shouldRenderVisual ? texture : undefined}
+          colorWrite={shouldRenderVisual}
+          opacity={shouldRenderVisual ? 1 : 0}
           transparent
-          alphaTest={object.kind === 'text' ? 0.01 : 0}
+          alphaTest={0}
           side={THREE.DoubleSide}
           toneMapped={false}
           depthTest={false}
           depthWrite={false}
         />
       </mesh>
-      {(selected || groupSelected) && !isExamImage ? (
+      {(selected || groupSelected) && !isExamImage && !editing ? (
         <>
           <SelectionFrame name={`${objectSceneName}:selection-frame`} width={object.width} height={object.height} />
           {selected && canResize ? (

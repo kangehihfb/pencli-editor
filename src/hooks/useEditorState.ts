@@ -28,6 +28,7 @@ import {
   rotatePoint,
 } from '../lib/sceneMath';
 import type { PageExportState } from '../lib/exportPageImage';
+import { DEFAULT_TEXT_COLOR, DEFAULT_TEXT_FONT_SIZE, clampTextFontSize, measureTextObject } from '../lib/objectTexture';
 
 const activeExamObjectId = 'object_exam_active';
 const maxHistorySize = 80;
@@ -97,6 +98,14 @@ function getBoundedDelta(bounds: PointBounds, container: PointBounds, delta: Poi
   return { x: nextDeltaX, y: nextDeltaY };
 }
 
+function getTextScaleForResizeHandle(handle: string, scaleX: number, scaleY: number) {
+  const usesX = handle.includes('e') || handle.includes('w');
+  const usesY = handle.includes('n') || handle.includes('s');
+  if (usesX && !usesY) return scaleX;
+  if (usesY && !usesX) return scaleY;
+  return Math.max(scaleX, scaleY);
+}
+
 function moveStrokePoints(points: Point2D[], delta: Point2D) {
   return points.map((point) => ({ x: point.x + delta.x, y: point.y + delta.y }));
 }
@@ -128,6 +137,11 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
   const activeSelection = selection ?? (groupSelection.length === 1 ? groupSelection[0] : null);
   const selectedObject = activeSelection?.type === 'object' ? objects.find((object) => object.id === activeSelection.id) ?? null : null;
   const selectedStroke = activeSelection?.type === 'stroke' ? strokes.find((stroke) => stroke.id === activeSelection.id) ?? null : null;
+  const selectedTextObject =
+    selectedObject?.kind === 'text'
+      ? selectedObject
+      : objects.find((object) => object.kind === 'text' && groupSelection.some((item) => item.type === 'object' && item.id === object.id)) ?? null;
+  const activeColor = selectedTextObject ? selectedTextObject.color ?? DEFAULT_TEXT_COLOR : penColor;
   const activeExamObject = objects.find((object) => object.id === activeExamObjectId) ?? null;
   const drawingBounds = drawingBoundsOverride ?? (activeExamObject ? getObjectBounds(activeExamObject) : null);
   const canUndo = historyRevision >= 0 && undoHistoryRef.current.length > 0;
@@ -190,20 +204,24 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
   const addText = () => {
     if (readonly) return;
     recordHistory();
+    const fontSize = DEFAULT_TEXT_FONT_SIZE;
+    const measured = measureTextObject('', fontSize);
     const object: WebGLObject = {
       id: makeId('text'),
       kind: 'text',
       x: drawingBounds?.centerX ?? 500,
       y: drawingBounds?.centerY ?? 380,
-      width: 150,
-      height: 46,
+      width: measured.width,
+      height: measured.height,
       layer: maxLayer + 1,
-      text: '새 텍스트',
+      color: penColor,
+      text: '',
+      fontSize,
     };
     setObjects((prev) => [...prev, object]);
     setSelection({ type: 'object', id: object.id });
     setGroupSelection([{ type: 'object', id: object.id }]);
-    setEditingText(null);
+    setEditingText({ id: object.id, value: '' });
     setTool('select');
   };
 
@@ -436,7 +454,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     }
   };
 
-  const updateObject = (id: string, patch: Partial<Pick<WebGLObject, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'layer'>>) => {
+  const updateObject = (id: string, patch: Partial<Pick<WebGLObject, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'layer' | 'fontSize' | 'color'>>) => {
     setObjects((prev) => prev.map((object) => (object.id === id ? { ...object, ...patch } : object)));
   };
 
@@ -449,6 +467,20 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     setObjects((prev) =>
       prev.map((object) => {
         if (object.id !== id) return object;
+        if (object.kind === 'text') {
+          const scale = patch.height / Math.max(object.height, 0.001);
+          const fontSize = clampTextFontSize((object.fontSize ?? DEFAULT_TEXT_FONT_SIZE) * scale);
+          const measured = measureTextObject(object.text ?? '', fontSize);
+          const nextObject = {
+            ...object,
+            x: patch.x,
+            y: patch.y,
+            width: measured.width,
+            height: measured.height,
+            fontSize,
+          };
+          return drawingBounds ? clampObjectToBounds(nextObject, drawingBounds) : nextObject;
+        }
         const nextObject = { ...object, ...patch };
         return drawingBounds ? clampObjectToBounds(nextObject, drawingBounds) : nextObject;
       }),
@@ -484,6 +516,22 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
           y: transform.localBounds.minY + (localCenter.y - origin.bounds.minY) * transform.scaleY,
         };
         const nextCenter = rotatePoint(nextLocalCenter, transform.originCenter, transform.rotation);
+
+        if (object.kind === 'text') {
+          const scale = getTextScaleForResizeHandle(origin.handle, transform.scaleX, transform.scaleY);
+          const fontSize = clampTextFontSize((original.fontSize ?? object.fontSize ?? DEFAULT_TEXT_FONT_SIZE) * scale);
+          const measured = measureTextObject(original.text ?? object.text ?? '', fontSize);
+
+          return {
+            ...object,
+            x: nextCenter.x,
+            y: nextCenter.y,
+            width: measured.width,
+            height: measured.height,
+            fontSize,
+            rotation: original.rotation ?? object.rotation,
+          };
+        }
 
         return {
           ...object,
@@ -564,12 +612,33 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     setGroupSelection([]);
   };
 
-  const commitTextEdit = () => {
+  const commitTextEdit = (value?: string) => {
     if (!editingText) return;
     recordHistory();
-    setObjects((prev) =>
-      prev.map((object) => (object.id === editingText.id ? { ...object, text: editingText.value || ' ' } : object)),
-    );
+    const nextText = value ?? editingText.value;
+    const isEmpty = nextText.trim().length === 0;
+    setObjects((prev) => {
+      if (isEmpty) {
+        return prev.filter((object) => object.id !== editingText.id);
+      }
+
+      return prev.map((object) => {
+        if (object.id !== editingText.id) return object;
+        const fontSize = object.fontSize ?? DEFAULT_TEXT_FONT_SIZE;
+        const measured = measureTextObject(nextText, fontSize);
+        return {
+          ...object,
+          text: nextText,
+          width: measured.width,
+          height: measured.height,
+          fontSize,
+        };
+      });
+    });
+    if (isEmpty) {
+      setSelection(null);
+      setGroupSelection([]);
+    }
     setEditingText(null);
   };
 
@@ -586,12 +655,36 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
   };
 
   const handleTextEditKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing || event.key === 'Process') {
+      return;
+    }
     if (event.key === 'Escape') {
+      event.preventDefault();
       setEditingText(null);
     }
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-      commitTextEdit();
+      event.preventDefault();
+      commitTextEdit(event.currentTarget.value);
     }
+  };
+
+  const applyColor = (color: string) => {
+    setPenColor(color);
+    if (readonly) return;
+
+    const targets = groupSelection.length > 0 ? groupSelection : selection ? [selection] : [];
+    const objectIds = new Set(targets.filter((item) => item.type === 'object').map((item) => item.id));
+    if (objectIds.size === 0) return;
+
+    const hasTextColorTarget = objects.some(
+      (object) => objectIds.has(object.id) && object.kind === 'text' && (object.color ?? DEFAULT_TEXT_COLOR).toLowerCase() !== color.toLowerCase(),
+    );
+    if (!hasTextColorTarget) return;
+
+    recordHistory();
+    setObjects((prev) =>
+      prev.map((object) => (objectIds.has(object.id) && object.kind === 'text' ? { ...object, color } : object)),
+    );
   };
 
   const bringForward = () => {
@@ -636,6 +729,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     imageInputRef,
     tool,
     penColor,
+    activeColor,
     penSize,
     readonly,
     selection,
@@ -657,6 +751,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     canRedo,
     setTool,
     setPenColor,
+    applyColor,
     setPenSize,
     setReadonly,
     setSelection,

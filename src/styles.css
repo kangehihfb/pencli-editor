@@ -1191,6 +1191,11 @@ button {
   transform-origin: center center;
 }
 
+.text-edit-html {
+  z-index: 2147483647 !important;
+  pointer-events: auto !important;
+}
+
 .text-edit-overlay {
   display: block;
   width: 220px;
@@ -1198,6 +1203,7 @@ button {
   border-radius: 0;
   padding: 0;
   color: var(--text);
+  caret-color: #2563eb;
   background: transparent;
   outline: none;
   box-shadow: none;
@@ -1209,13 +1215,20 @@ button {
     "Segoe UI",
     sans-serif;
   text-align: center;
-  overflow: hidden;
+  overflow: auto;
   resize: none;
+  white-space: pre;
+  text-shadow: none;
+  scrollbar-width: none;
 }
 
 .text-edit-overlay:focus {
   border: none;
   box-shadow: none;
+}
+
+.text-edit-overlay::-webkit-scrollbar {
+  display: none;
 }
 
 @media (max-width: 1100px) {

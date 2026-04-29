@@ -32,7 +32,9 @@ export type WebGLObject = {
   height: number;
   rotation?: number;
   layer: number;
+  color?: string;
   text?: string;
+  fontSize?: number;
   imageSrc?: string;
   imageBackground?: string;
   imageName?: string;
@@ -93,6 +95,8 @@ export type ResizeState =
         width: number;
         height: number;
         rotation?: number;
+        kind: ObjectKind;
+        fontSize?: number;
       };
     }
   | {
@@ -115,7 +119,7 @@ export type ResizeState =
         rotation?: number;
         bounds: PointBounds;
         items: SelectionItem[];
-        objects: Array<Pick<WebGLObject, 'id' | 'x' | 'y' | 'width' | 'height' | 'rotation'>>;
+        objects: Array<Pick<WebGLObject, 'id' | 'kind' | 'x' | 'y' | 'width' | 'height' | 'rotation' | 'fontSize' | 'text'>>;
         strokes: Array<Pick<Stroke, 'id' | 'points' | 'rotation'>>;
       };
     }
