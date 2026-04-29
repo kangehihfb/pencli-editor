@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { createImageObjectTexture, createTextObjectTexture } from '../../../lib/objectTexture';
 import { layerToZ } from '../../../lib/sceneMath';
 import type { WebGLObject } from '../../../types/editor';
-import { ResizeHandleMarker, SelectionFrame } from './SelectionVisuals';
+import { ResizeHandleMarker, RotationHandleMarker, SelectionFrame } from './SelectionVisuals';
 
 type WebGLObjectMeshProps = {
   object: WebGLObject;
@@ -47,7 +47,7 @@ export function WebGLObjectMesh({
   }, [object.height, object.imageBackground, object.imageSrc, object.kind, object.text, object.width]);
 
   return (
-    <group name={objectSceneName} position={[object.x, object.y, layerToZ(object.layer)]}>
+    <group name={objectSceneName} position={[object.x, object.y, layerToZ(object.layer)]} rotation={[0, 0, THREE.MathUtils.degToRad(object.rotation ?? 0)]}>
       <mesh
         name={`${objectSceneName}:surface`}
         renderOrder={object.layer * 10}
@@ -78,7 +78,12 @@ export function WebGLObjectMesh({
       {(selected || groupSelected) && !isExamImage ? (
         <>
           <SelectionFrame name={`${objectSceneName}:selection-frame`} width={object.width} height={object.height} />
-          {selected && canResize ? <ResizeHandleMarker name={`${objectSceneName}:resize-handle:se`} width={object.width} height={object.height} /> : null}
+          {selected && canResize ? (
+            <>
+              <ResizeHandleMarker name={`${objectSceneName}:resize-handle:se`} width={object.width} height={object.height} />
+              <RotationHandleMarker name={`${objectSceneName}:rotation-handle`} height={object.height} />
+            </>
+          ) : null}
         </>
       ) : null}
     </group>

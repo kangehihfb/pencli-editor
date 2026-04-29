@@ -5,7 +5,7 @@ import type { Stroke, WebGLObject } from '../../../types/editor';
 type SelectionDebugControlsProps = {
   selectedObject: WebGLObject | null;
   selectedStroke: Stroke | null;
-  onUpdateObject: (id: string, patch: Partial<Pick<WebGLObject, 'x' | 'y' | 'width' | 'height' | 'layer'>>) => void;
+  onUpdateObject: (id: string, patch: Partial<Pick<WebGLObject, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'layer'>>) => void;
   onUpdateStroke: (id: string, patch: Partial<Pick<Stroke, 'layer' | 'size'>>) => void;
 };
 
@@ -76,6 +76,16 @@ export function SelectionDebugControls({
           if (selectedObjectRef.current) onUpdateObject(selectedObjectRef.current.id, { height: value });
         },
       },
+      rotation: {
+        value: 0,
+        min: -180,
+        max: 180,
+        step: 1,
+        onChange: (value: number) => {
+          if (Date.now() < ignoreDebugChangesUntilRef.current) return;
+          if (selectedObjectRef.current) onUpdateObject(selectedObjectRef.current.id, { rotation: value });
+        },
+      },
       layer: {
         value: 0,
         min: 0,
@@ -110,6 +120,7 @@ export function SelectionDebugControls({
       y: selectedObject?.y ?? 0,
       width: selectedObject?.width ?? 1,
       height: selectedObject?.height ?? 1,
+      rotation: selectedObject?.rotation ?? 0,
       layer: selectedObject?.layer ?? selectedStroke?.layer ?? 0,
       strokeSize: selectedStroke?.size ?? 3.5,
     });

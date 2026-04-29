@@ -12,6 +12,7 @@ export type Stroke = {
   points: Point2D[];
   color: string;
   size: number;
+  rotation?: number;
   layer: number;
 };
 
@@ -29,6 +30,7 @@ export type WebGLObject = {
   y: number;
   width: number;
   height: number;
+  rotation?: number;
   layer: number;
   text?: string;
   imageSrc?: string;
@@ -66,7 +68,7 @@ export type DragState =
     }
   | null;
 
-export type ResizeHandle = 'nw' | 'ne' | 'se' | 'sw';
+export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 export type PointBounds = {
   minX: number;
@@ -90,6 +92,7 @@ export type ResizeState =
         y: number;
         width: number;
         height: number;
+        rotation?: number;
       };
     }
   | {
@@ -100,6 +103,7 @@ export type ResizeState =
         pointer: Point2D;
         points: Point2D[];
         bounds: PointBounds;
+        rotation?: number;
       };
     }
   | {
@@ -107,15 +111,52 @@ export type ResizeState =
       handle: ResizeHandle;
       origin: {
         pointer: Point2D;
+        handle: ResizeHandle;
+        rotation?: number;
         bounds: PointBounds;
         items: SelectionItem[];
-        objects: Array<Pick<WebGLObject, 'id' | 'x' | 'y' | 'width' | 'height'>>;
-        strokes: Array<Pick<Stroke, 'id' | 'points'>>;
+        objects: Array<Pick<WebGLObject, 'id' | 'x' | 'y' | 'width' | 'height' | 'rotation'>>;
+        strokes: Array<Pick<Stroke, 'id' | 'points' | 'rotation'>>;
       };
     }
   | null;
 
 export type GroupResizeOrigin = Extract<ResizeState, { type: 'group' }>['origin'];
+
+export type RotateState =
+  | {
+      type: 'object';
+      id: string;
+      origin: {
+        center: Point2D;
+        pointerAngle: number;
+        rotation: number;
+      };
+    }
+  | {
+      type: 'stroke';
+      id: string;
+      origin: {
+        center: Point2D;
+        pointerAngle: number;
+        rotation: number;
+      };
+    }
+  | {
+      type: 'group';
+      origin: {
+        center: Point2D;
+        pointerAngle: number;
+        rotation: number;
+        bounds: PointBounds;
+        items: SelectionItem[];
+        objects: Array<Pick<WebGLObject, 'id' | 'x' | 'y' | 'width' | 'height' | 'rotation'>>;
+        strokes: Array<Pick<Stroke, 'id' | 'points' | 'rotation'>>;
+      };
+    }
+  | null;
+
+export type GroupRotateOrigin = Extract<RotateState, { type: 'group' }>['origin'];
 
 export type EditingText = {
   id: string;

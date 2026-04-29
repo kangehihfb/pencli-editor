@@ -3,10 +3,12 @@ import type { ChangeEvent, KeyboardEvent } from 'react';
 import type {
   DragState,
   EditingText,
+  GroupRotateOrigin,
   GroupResizeOrigin,
   Point2D,
   PointBounds,
   ResizeState,
+  RotateState,
   Selection,
   SelectionItem,
   Stroke,
@@ -15,7 +17,16 @@ import type {
   ZoomCommand,
 } from '../types/editor';
 import { examPresets } from '../data/examPresets';
-import { getGroupResizeScale, getNextStrokePoints, getObjectBounds, getPointBounds, getSelectionItemsBounds, makeId } from '../lib/sceneMath';
+import {
+  getGroupResizeTransform,
+  getNextStrokePoints,
+  getObjectBounds,
+  getPointBounds,
+  getSelectionItemsBounds,
+  makeId,
+  normalizeRotation,
+  rotatePoint,
+} from '../lib/sceneMath';
 import type { PageExportState } from '../lib/exportPageImage';
 
 const activeExamObjectId = 'object_exam_active';
@@ -104,6 +115,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
   const [groupSelection, setGroupSelection] = useState<SelectionItem[]>([]);
   const [dragState, setDragState] = useState<DragState>(null);
   const [resizeState, setResizeState] = useState<ResizeState>(null);
+  const [rotateState, setRotateState] = useState<RotateState>(null);
   const [editingText, setEditingText] = useState<EditingText>(null);
   const [activeStrokeId, setActiveStrokeId] = useState<string | null>(null);
   const [zoomCommand, setZoomCommand] = useState<ZoomCommand | null>(null);
@@ -136,6 +148,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     setActiveStrokeId(null);
     setDragState(null);
     setResizeState(null);
+    setRotateState(null);
     setEditingText(null);
   }, []);
 
@@ -254,6 +267,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     pendingExamPresetIdRef.current = null;
     setDragState(null);
     setResizeState(null);
+    setRotateState(null);
     setEditingText(null);
   };
 
@@ -273,6 +287,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     setGroupSelection([]);
     setDragState(null);
     setResizeState(null);
+    setRotateState(null);
     setEditingText(null);
   }, [groupSelection, readonly, recordHistory, selection]);
 
@@ -421,11 +436,11 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     }
   };
 
-  const updateObject = (id: string, patch: Partial<Pick<WebGLObject, 'x' | 'y' | 'width' | 'height' | 'layer'>>) => {
+  const updateObject = (id: string, patch: Partial<Pick<WebGLObject, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'layer'>>) => {
     setObjects((prev) => prev.map((object) => (object.id === id ? { ...object, ...patch } : object)));
   };
 
-  const updateStroke = (id: string, patch: Partial<Pick<Stroke, 'layer' | 'size'>>) => {
+  const updateStroke = (id: string, patch: Partial<Pick<Stroke, 'layer' | 'size' | 'rotation'>>) => {
     setStrokes((prev) => prev.map((stroke) => (stroke.id === id ? { ...stroke, ...patch } : stroke)));
   };
 
@@ -445,8 +460,17 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     setStrokes((prev) => prev.map((stroke) => (stroke.id === id ? { ...stroke, points: nextPoints } : stroke)));
   };
 
+  const rotateObject = (id: string, rotation: number) => {
+    if (id === activeExamObjectId) return;
+    setObjects((prev) => prev.map((object) => (object.id === id ? { ...object, rotation } : object)));
+  };
+
+  const rotateStroke = (id: string, rotation: number) => {
+    setStrokes((prev) => prev.map((stroke) => (stroke.id === id ? { ...stroke, rotation } : stroke)));
+  };
+
   const resizeGroup = (origin: GroupResizeOrigin, point: Point2D) => {
-    const scale = getGroupResizeScale(origin, point);
+    const transform = getGroupResizeTransform(origin, point);
     const objectMap = new Map(origin.objects.map((object) => [object.id, object]));
     const strokeMap = new Map(origin.strokes.map((stroke) => [stroke.id, stroke]));
 
@@ -454,12 +478,20 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
       prev.map((object) => {
         const original = objectMap.get(object.id);
         if (!original) return object;
+        const localCenter = rotatePoint({ x: original.x, y: original.y }, transform.originCenter, -transform.rotation);
+        const nextLocalCenter = {
+          x: transform.localBounds.minX + (localCenter.x - origin.bounds.minX) * transform.scaleX,
+          y: transform.localBounds.minY + (localCenter.y - origin.bounds.minY) * transform.scaleY,
+        };
+        const nextCenter = rotatePoint(nextLocalCenter, transform.originCenter, transform.rotation);
+
         return {
           ...object,
-          x: origin.bounds.minX + (original.x - origin.bounds.minX) * scale,
-          y: origin.bounds.minY + (original.y - origin.bounds.minY) * scale,
-          width: Math.max(18, original.width * scale),
-          height: Math.max(12, original.height * scale),
+          x: nextCenter.x,
+          y: nextCenter.y,
+          width: Math.max(18, original.width * transform.scaleX),
+          height: Math.max(12, original.height * transform.scaleY),
+          rotation: original.rotation ?? object.rotation,
         };
       }),
     );
@@ -470,10 +502,56 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
         if (!original) return stroke;
         return {
           ...stroke,
-          points: original.points.map((item) => ({
-            x: origin.bounds.minX + (item.x - origin.bounds.minX) * scale,
-            y: origin.bounds.minY + (item.y - origin.bounds.minY) * scale,
-          })),
+          rotation: original.rotation ?? stroke.rotation,
+          points: original.points.map((item) => {
+            const localPoint = rotatePoint(item, transform.originCenter, -transform.rotation);
+            return rotatePoint(
+              {
+                x: transform.localBounds.minX + (localPoint.x - origin.bounds.minX) * transform.scaleX,
+                y: transform.localBounds.minY + (localPoint.y - origin.bounds.minY) * transform.scaleY,
+              },
+              transform.originCenter,
+              transform.rotation,
+            );
+          }),
+        };
+      }),
+    );
+  };
+
+  const rotateGroup = (origin: GroupRotateOrigin, angleDelta: number) => {
+    const objectMap = new Map(origin.objects.map((object) => [object.id, object]));
+    const strokeMap = new Map(origin.strokes.map((stroke) => [stroke.id, stroke]));
+
+    setObjects((prev) =>
+      prev.map((object) => {
+        const original = objectMap.get(object.id);
+        if (!original) return object;
+
+        const nextCenter = rotatePoint({ x: original.x, y: original.y }, origin.center, angleDelta);
+        return {
+          ...object,
+          x: nextCenter.x,
+          y: nextCenter.y,
+          rotation: normalizeRotation((original.rotation ?? 0) + angleDelta),
+        };
+      }),
+    );
+
+    setStrokes((prev) =>
+      prev.map((stroke) => {
+        const original = strokeMap.get(stroke.id);
+        if (!original) return stroke;
+
+        const originalBounds = getPointBounds(original.points);
+        const originalCenter = { x: originalBounds.centerX, y: originalBounds.centerY };
+        const nextCenter = rotatePoint(originalCenter, origin.center, angleDelta);
+        const centerDelta = { x: nextCenter.x - originalCenter.x, y: nextCenter.y - originalCenter.y };
+
+        return {
+          ...stroke,
+          points: moveStrokePoints(original.points, centerDelta),
+          rotation: normalizeRotation((original.rotation ?? 0) + angleDelta),
         };
       }),
     );
@@ -564,6 +642,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     groupSelection,
     dragState,
     resizeState,
+    rotateState,
     editingText,
     zoomCommand,
     strokes,
@@ -584,6 +663,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     setGroupSelection,
     setDragState,
     setResizeState,
+    setRotateState,
     addText,
     addImage,
     addImageFromFile,
@@ -601,6 +681,9 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     updateStroke,
     resizeObject,
     resizeStroke,
+    rotateObject,
+    rotateStroke,
+    rotateGroup,
     resizeGroup,
     eraseStroke,
     startTextEdit,

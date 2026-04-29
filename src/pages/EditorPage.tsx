@@ -16,13 +16,18 @@ export function EditorPage() {
   const [pageZoom, setPageZoom] = useState(1);
   const [comparisonExportRequestId, setComparisonExportRequestId] = useState(0);
   const handleToolChange = (nextTool: typeof editor.tool) => {
-    editor.setTool(nextTool);
+    if (editor.editingText) {
+      editor.commitTextEdit();
+    }
 
-    if (nextTool === "answer") {
+    editor.setTool(nextTool);
+    editor.setDragState(null);
+    editor.setResizeState(null);
+    editor.setRotateState(null);
+
+    if (nextTool !== "select") {
       editor.setSelection(null);
       editor.setGroupSelection([]);
-      editor.setDragState(null);
-      editor.setResizeState(null);
     }
   };
 
@@ -64,6 +69,7 @@ export function EditorPage() {
         groupSelection={editor.groupSelection}
         dragState={editor.dragState}
         resizeState={editor.resizeState}
+        rotateState={editor.rotateState}
         editingText={editor.editingText}
         zoomCommand={null}
         drawingBounds={PAGE_BOUNDS}
@@ -77,6 +83,7 @@ export function EditorPage() {
         onGroupSelectionChange={editor.setGroupSelection}
         onDragStateChange={editor.setDragState}
         onResizeStateChange={editor.setResizeState}
+        onRotateStateChange={editor.setRotateState}
         onBeginStroke={editor.beginStroke}
         onAppendStrokePoint={editor.appendStrokePoint}
         onEndStroke={editor.endStroke}
@@ -85,6 +92,9 @@ export function EditorPage() {
         onMoveGroup={editor.moveGroup}
         onResizeObject={editor.resizeObject}
         onResizeStroke={editor.resizeStroke}
+        onRotateObject={editor.rotateObject}
+        onRotateStroke={editor.rotateStroke}
+        onRotateGroup={editor.rotateGroup}
         onResizeGroup={editor.resizeGroup}
         onEraseStroke={editor.eraseStroke}
         onStartTextEdit={editor.startTextEdit}

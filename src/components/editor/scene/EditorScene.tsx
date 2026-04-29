@@ -8,26 +8,33 @@ import {
   getBoundsFromPoints,
   getEditorPointerPoint,
   getItemsInBounds,
+  getGroupResizeTransform,
   getObjectBounds,
   getPointBounds,
+  getPointerAngle,
+  getRotatedResizeHandleAtPoint,
   getResizedObjectRect,
   getResizedStrokePoints,
   getSceneHits,
   getSelectionItemsBounds,
   getStrokeSelectionThreshold,
   isPointInBounds,
-  isPointInResizeHandle,
+  isPointInRotatedBounds,
+  isPointInRotationHandle,
   isPointNearStroke,
+  normalizeRotation,
 } from '../../../lib/sceneMath';
 import type {
   DragState,
   EditingText,
+  GroupRotateOrigin,
   GroupResizeOrigin,
   MarqueeState,
   Point2D,
   PointBounds,
   ResizeHandle,
   ResizeState,
+  RotateState,
   SceneHit,
   Selection,
   SelectionItem,
@@ -37,7 +44,7 @@ import type {
   ZoomCommand,
 } from '../../../types/editor';
 import { BoardGrid } from './BoardGrid';
-import { MarqueeFrame, ResizeHandleMarker, SelectionFrame } from './SelectionVisuals';
+import { MarqueeFrame, ResizeHandleMarker, RotationHandleMarker, SelectionFrame } from './SelectionVisuals';
 import { StrokeMesh } from './StrokeMesh';
 import { TextEditOverlay } from './TextEditOverlay';
 import { WebGLObjectMesh } from './WebGLObjectMesh';
@@ -64,6 +71,22 @@ function getOrthographicVisibleSize(camera: THREE.OrthographicCamera) {
   return {
     width: Math.abs(camera.right - camera.left) / Math.max(camera.zoom, 0.001),
     height: Math.abs(camera.top - camera.bottom) / Math.max(camera.zoom, 0.001),
+  };
+}
+
+function getSceneHitRenderOrder(hit: SceneHit) {
+  return hit.layer * 10 + (hit.type === 'stroke' ? 2 : 0);
+}
+
+function translateBounds(bounds: PointBounds, delta: Point2D): PointBounds {
+  return {
+    ...bounds,
+    minX: bounds.minX + delta.x,
+    maxX: bounds.maxX + delta.x,
+    minY: bounds.minY + delta.y,
+    maxY: bounds.maxY + delta.y,
+    centerX: bounds.centerX + delta.x,
+    centerY: bounds.centerY + delta.y,
   };
 }
 
@@ -97,6 +120,7 @@ export type EditorSceneProps = {
   groupSelection: SelectionItem[];
   dragState: DragState;
   resizeState: ResizeState;
+  rotateState: RotateState;
   editingText: EditingText;
   zoomCommand: ZoomCommand | null;
   drawingBounds: PointBounds | null;
@@ -104,6 +128,7 @@ export type EditorSceneProps = {
   onGroupSelectionChange: (selection: SelectionItem[]) => void;
   onDragStateChange: (dragState: DragState) => void;
   onResizeStateChange: (resizeState: ResizeState) => void;
+  onRotateStateChange: (rotateState: RotateState) => void;
   onBeginStroke: (point: Point2D) => void;
   onAppendStrokePoint: (point: Point2D) => void;
   onEndStroke: () => void;
@@ -112,6 +137,9 @@ export type EditorSceneProps = {
   onMoveGroup: (items: SelectionItem[], delta: Point2D) => void;
   onResizeObject: (id: string, patch: Pick<WebGLObject, 'x' | 'y' | 'width' | 'height'>) => void;
   onResizeStroke: (id: string, points: Point2D[]) => void;
+  onRotateObject: (id: string, rotation: number) => void;
+  onRotateStroke: (id: string, rotation: number) => void;
+  onRotateGroup: (origin: GroupRotateOrigin, angleDelta: number) => void;
   onResizeGroup: (origin: GroupResizeOrigin, point: Point2D) => void;
   onEraseStroke: (id: string) => void;
   onStartTextEdit: (object: WebGLObject) => void;
@@ -134,6 +162,7 @@ export function EditorScene({
   groupSelection,
   dragState,
   resizeState,
+  rotateState,
   editingText,
   zoomCommand,
   drawingBounds,
@@ -141,6 +170,7 @@ export function EditorScene({
   onGroupSelectionChange,
   onDragStateChange,
   onResizeStateChange,
+  onRotateStateChange,
   onBeginStroke,
   onAppendStrokePoint,
   onEndStroke,
@@ -149,6 +179,9 @@ export function EditorScene({
   onMoveGroup,
   onResizeObject,
   onResizeStroke,
+  onRotateObject,
+  onRotateStroke,
+  onRotateGroup,
   onResizeGroup,
   onEraseStroke,
   onStartTextEdit,
@@ -166,10 +199,22 @@ export function EditorScene({
   const drawingBoundsRef = useRef(drawingBounds);
   const isClampingCameraRef = useRef(false);
   const [marqueeState, setMarqueeState] = useState<MarqueeState>(null);
+  const [groupTransformBox, setGroupTransformBox] = useState<{
+    itemsKey: string;
+    bounds: PointBounds;
+    rotation: number;
+  } | null>(null);
   const isDrawingRef = useRef(false);
   const activePointerIdRef = useRef<number | null>(null);
   const lastObjectClickRef = useRef<{ id: string; time: number } | null>(null);
   const groupBounds = useMemo(() => getSelectionItemsBounds(groupSelection, strokes, objects), [groupSelection, objects, strokes]);
+  const groupSelectionKey = useMemo(
+    () => groupSelection.map((item) => `${item.type}:${item.id}`).sort().join('|'),
+    [groupSelection],
+  );
+  const activeGroupBox = groupSelection.length > 1 && groupTransformBox?.itemsKey === groupSelectionKey ? groupTransformBox : null;
+  const effectiveGroupBounds = activeGroupBox?.bounds ?? groupBounds;
+  const effectiveGroupRotation = activeGroupBox?.rotation ?? 0;
   const drawingBoundsKey = drawingBounds
     ? `${drawingBounds.minX}:${drawingBounds.maxX}:${drawingBounds.minY}:${drawingBounds.maxY}`
     : 'none';
@@ -198,6 +243,18 @@ export function EditorScene({
   useEffect(() => {
     drawingBoundsRef.current = drawingBounds;
   }, [drawingBounds]);
+
+  useEffect(() => {
+    if (groupSelection.length < 2 || !groupBounds) {
+      setGroupTransformBox(null);
+      return;
+    }
+
+    setGroupTransformBox((current) => {
+      if (current?.itemsKey === groupSelectionKey) return current;
+      return { itemsKey: groupSelectionKey, bounds: groupBounds, rotation: 0 };
+    });
+  }, [groupBounds, groupSelection.length, groupSelectionKey]);
 
   const clampCameraToDrawingBounds = useCallback(
     (fitToBounds = false) => {
@@ -374,10 +431,6 @@ export function EditorScene({
   const updateResize = useCallback(
     (currentResizeState: ResizeState, point: Point2D) => {
       if (!currentResizeState) return false;
-      if (currentResizeState.handle !== 'se') {
-        onResizeStateChange(null);
-        return false;
-      }
       if (currentResizeState.type === 'object') {
         onResizeObject(currentResizeState.id, getResizedObjectRect(currentResizeState.handle, currentResizeState.origin, point));
         return true;
@@ -385,13 +438,46 @@ export function EditorScene({
 
       if (currentResizeState.type === 'group') {
         onResizeGroup(currentResizeState.origin, point);
+        setGroupTransformBox({
+          itemsKey: groupSelectionKey,
+          bounds: getGroupResizeTransform(currentResizeState.origin, point).bounds,
+          rotation: currentResizeState.origin.rotation ?? 0,
+        });
         return true;
       }
 
       onResizeStroke(currentResizeState.id, getResizedStrokePoints(currentResizeState.handle, currentResizeState.origin, point));
       return true;
     },
-    [onResizeGroup, onResizeObject, onResizeStateChange, onResizeStroke],
+    [groupSelectionKey, onResizeGroup, onResizeObject, onResizeStroke],
+  );
+
+  const updateRotate = useCallback(
+    (currentRotateState: RotateState, point: Point2D) => {
+      if (!currentRotateState) return false;
+      const angle = getPointerAngle(currentRotateState.origin.center, point);
+      const angleDelta = angle - currentRotateState.origin.pointerAngle;
+
+      if (currentRotateState.type === 'object') {
+        onRotateObject(currentRotateState.id, normalizeRotation(currentRotateState.origin.rotation + angleDelta));
+        return true;
+      }
+
+      if (currentRotateState.type === 'group') {
+        const nextRotation = normalizeRotation(currentRotateState.origin.rotation + angleDelta);
+        onRotateGroup(currentRotateState.origin, angleDelta);
+        setGroupTransformBox({
+          itemsKey: groupSelectionKey,
+          bounds: currentRotateState.origin.bounds,
+          rotation: nextRotation,
+        });
+        return true;
+      }
+
+      onRotateStroke(currentRotateState.id, normalizeRotation(currentRotateState.origin.rotation + angleDelta));
+      return true;
+    },
+    [groupSelectionKey, onRotateGroup, onRotateObject, onRotateStroke],
   );
 
   useEffect(() => {
@@ -403,6 +489,7 @@ export function EditorScene({
       releaseActivePointer();
       onDragStateChange(null);
       onResizeStateChange(null);
+      onRotateStateChange(null);
       setMarqueeState(null);
     };
 
@@ -414,20 +501,24 @@ export function EditorScene({
       window.removeEventListener('pointercancel', stopPointerWork);
       window.removeEventListener('blur', stopPointerWork);
     };
-  }, [onDragStateChange, onEndStroke, onResizeStateChange, releaseActivePointer]);
+  }, [onDragStateChange, onEndStroke, onResizeStateChange, onRotateStateChange, releaseActivePointer]);
 
   useEffect(() => {
-    if (!resizeState || readonly) return;
+    if ((!resizeState && !rotateState) || readonly) return;
 
     const handlePointerMove = (event: PointerEvent) => {
       const point = getPointerPointFromClient(event);
       if (!point) return;
-      updateResize(resizeState, getBoundedPoint(point));
+      if (resizeState) {
+        updateResize(resizeState, getBoundedPoint(point));
+        return;
+      }
+      updateRotate(rotateState, point);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
     return () => window.removeEventListener('pointermove', handlePointerMove);
-  }, [getBoundedPoint, getPointerPointFromClient, readonly, resizeState, updateResize]);
+  }, [getBoundedPoint, getPointerPointFromClient, readonly, resizeState, rotateState, updateResize, updateRotate]);
 
   const toPoint = getPointerPointFromEvent;
 
@@ -439,27 +530,32 @@ export function EditorScene({
   const isSelectedItem = (type: SelectionItem['type'], id: string) => groupSelection.some((item) => item.type === type && item.id === id);
 
   const tryStartGroupMove = (pointer: Point2D) => {
-    if (readonly || tool !== 'select' || groupSelection.length < 2 || !groupBounds) return false;
-    if (!isPointInBounds(pointer, groupBounds, 8)) return false;
+    if (readonly || tool !== 'select' || groupSelection.length < 2 || !effectiveGroupBounds) return false;
+    if (!isPointInRotatedBounds(pointer, effectiveGroupBounds, effectiveGroupRotation, 8)) return false;
     onResizeStateChange(null);
+    onRotateStateChange(null);
     onDragStateChange({ type: 'group', items: groupSelection, last: pointer });
     return true;
   };
 
   const tryStartGroupResize = (pointer: Point2D) => {
-    if (readonly || tool !== 'select' || groupSelection.length < 2 || !groupBounds) return false;
-    if (!isPointInResizeHandle(pointer, groupBounds, 'object')) return false;
+    if (readonly || tool !== 'select' || groupSelection.length < 2 || !effectiveGroupBounds) return false;
+    const handle = getRotatedResizeHandleAtPoint(pointer, effectiveGroupBounds, 'object', effectiveGroupRotation);
+    if (!handle) return false;
 
     const objectIds = new Set(groupSelection.filter((item) => item.type === 'object').map((item) => item.id));
     const strokeIds = new Set(groupSelection.filter((item) => item.type === 'stroke').map((item) => item.id));
 
     onDragStateChange(null);
+    onRotateStateChange(null);
     onResizeStateChange({
       type: 'group',
-      handle: 'se',
+      handle,
       origin: {
         pointer,
-        bounds: groupBounds,
+        handle,
+        rotation: effectiveGroupRotation,
+        bounds: effectiveGroupBounds,
         items: groupSelection,
         objects: objects
           .filter((object) => objectIds.has(object.id))
@@ -469,12 +565,14 @@ export function EditorScene({
             y: object.y,
             width: object.width,
             height: object.height,
+            rotation: object.rotation ?? 0,
           })),
         strokes: strokes
           .filter((stroke) => strokeIds.has(stroke.id))
           .map((stroke) => ({
             id: stroke.id,
             points: stroke.points.map((point) => ({ ...point })),
+            rotation: stroke.rotation ?? 0,
           })),
       },
     });
@@ -510,7 +608,7 @@ export function EditorScene({
       }
     }
 
-    const hit = [...strokeHits.values(), ...objectHits.values()].sort((a, b) => b.layer - a.layer)[0];
+    const hit = [...strokeHits.values(), ...objectHits.values()].sort((a, b) => getSceneHitRenderOrder(b) - getSceneHitRenderOrder(a))[0];
 
     if (!hit) return false;
 
@@ -519,6 +617,7 @@ export function EditorScene({
       setSelectionItems([nextSelection]);
       if (startDrag) {
         onResizeStateChange(null);
+        onRotateStateChange(null);
         onDragStateChange({ type: 'stroke', id: hit.id, last: hit.point });
       }
       return true;
@@ -531,6 +630,7 @@ export function EditorScene({
     setSelectionItems([nextSelection]);
     if (startDrag) {
       onResizeStateChange(null);
+      onRotateStateChange(null);
       onDragStateChange({ type: 'object', id: hit.id, offset: { x: hit.point.x - object.x, y: hit.point.y - object.y } });
     }
     return true;
@@ -538,9 +638,9 @@ export function EditorScene({
 
   const beginObjectResize = (object: WebGLObject, handle: ResizeHandle, pointer: Point2D) => {
     if (readonly || tool !== 'select') return;
-    if (handle !== 'se') return;
     setSelectionItems([{ type: 'object', id: object.id }]);
     onDragStateChange(null);
+    onRotateStateChange(null);
     onResizeStateChange({
       type: 'object',
       id: object.id,
@@ -551,23 +651,25 @@ export function EditorScene({
         y: object.y,
         width: object.width,
         height: object.height,
+        rotation: object.rotation ?? 0,
       },
     });
   };
 
   const beginStrokeResize = (stroke: Stroke, handle: ResizeHandle, pointer: Point2D) => {
     if (readonly || tool !== 'select') return;
-    if (handle !== 'se') return;
     setSelectionItems([{ type: 'stroke', id: stroke.id }]);
     onDragStateChange(null);
+    onRotateStateChange(null);
     onResizeStateChange({
       type: 'stroke',
       id: stroke.id,
       handle,
       origin: {
         pointer,
-        points: stroke.points,
+        points: stroke.points.map((point) => ({ ...point })),
         bounds: getPointBounds(stroke.points),
+        rotation: stroke.rotation ?? 0,
       },
     });
   };
@@ -576,7 +678,108 @@ export function EditorScene({
     if (readonly || tool !== 'select') return;
     setSelectionItems([{ type: 'stroke', id: stroke.id }]);
     onResizeStateChange(null);
+    onRotateStateChange(null);
     onDragStateChange({ type: 'stroke', id: stroke.id, last: pointer });
+  };
+
+  const beginObjectRotate = (object: WebGLObject, pointer: Point2D) => {
+    if (readonly || tool !== 'select') return;
+    const bounds = getObjectBounds(object);
+    const center = { x: bounds.centerX, y: bounds.centerY };
+    setSelectionItems([{ type: 'object', id: object.id }]);
+    onDragStateChange(null);
+    onResizeStateChange(null);
+    onRotateStateChange({
+      type: 'object',
+      id: object.id,
+      origin: {
+        center,
+        pointerAngle: getPointerAngle(center, pointer),
+        rotation: object.rotation ?? 0,
+      },
+    });
+  };
+
+  const beginStrokeRotate = (stroke: Stroke, pointer: Point2D) => {
+    if (readonly || tool !== 'select') return;
+    const bounds = getPointBounds(stroke.points);
+    const center = { x: bounds.centerX, y: bounds.centerY };
+    setSelectionItems([{ type: 'stroke', id: stroke.id }]);
+    onDragStateChange(null);
+    onResizeStateChange(null);
+    onRotateStateChange({
+      type: 'stroke',
+      id: stroke.id,
+      origin: {
+        center,
+        pointerAngle: getPointerAngle(center, pointer),
+        rotation: stroke.rotation ?? 0,
+      },
+    });
+  };
+
+  const beginGroupRotate = (pointer: Point2D) => {
+    if (readonly || tool !== 'select' || groupSelection.length < 2 || !effectiveGroupBounds) return;
+    const objectIds = new Set(groupSelection.filter((item) => item.type === 'object').map((item) => item.id));
+    const strokeIds = new Set(groupSelection.filter((item) => item.type === 'stroke').map((item) => item.id));
+    const center = { x: effectiveGroupBounds.centerX, y: effectiveGroupBounds.centerY };
+
+    onDragStateChange(null);
+    onResizeStateChange(null);
+    onRotateStateChange({
+      type: 'group',
+      origin: {
+        center,
+        pointerAngle: getPointerAngle(center, pointer),
+        rotation: effectiveGroupRotation,
+        bounds: effectiveGroupBounds,
+        items: groupSelection,
+        objects: objects
+          .filter((object) => objectIds.has(object.id) && object.id !== activeExamObjectId)
+          .map((object) => ({
+            id: object.id,
+            x: object.x,
+            y: object.y,
+            width: object.width,
+            height: object.height,
+            rotation: object.rotation ?? 0,
+          })),
+        strokes: strokes
+          .filter((stroke) => strokeIds.has(stroke.id))
+          .map((stroke) => ({
+            id: stroke.id,
+            points: stroke.points.map((point) => ({ ...point })),
+            rotation: stroke.rotation ?? 0,
+          })),
+      },
+    });
+  };
+
+  const tryStartGroupRotate = (pointer: Point2D) => {
+    if (readonly || tool !== 'select' || groupSelection.length < 2 || !effectiveGroupBounds) return false;
+    if (!isPointInRotationHandle(pointer, effectiveGroupBounds, 'object', effectiveGroupRotation)) return false;
+    beginGroupRotate(pointer);
+    return true;
+  };
+
+  const tryStartSelectedRotate = (pointer: Point2D) => {
+    if (readonly || tool !== 'select' || !selection) return false;
+
+    if (selection.type === 'object') {
+      const object = objects.find((item) => item.id === selection.id);
+      if (!object) return false;
+      const bounds = getObjectBounds(object);
+      if (!isPointInRotationHandle(pointer, bounds, 'object', object.rotation ?? 0)) return false;
+      beginObjectRotate(object, pointer);
+      return true;
+    }
+
+    const stroke = strokes.find((item) => item.id === selection.id);
+    if (!stroke) return false;
+    const bounds = getPointBounds(stroke.points);
+    if (!isPointInRotationHandle(pointer, bounds, 'stroke', stroke.rotation ?? 0)) return false;
+    beginStrokeRotate(stroke, pointer);
+    return true;
   };
 
   const tryStartSelectedResize = (pointer: Point2D) => {
@@ -584,14 +787,18 @@ export function EditorScene({
 
     if (selection.type === 'object') {
       const object = objects.find((item) => item.id === selection.id);
-      if (!object || !isPointInResizeHandle(pointer, getObjectBounds(object), 'object')) return false;
-      beginObjectResize(object, 'se', pointer);
+      if (!object) return false;
+      const handle = getRotatedResizeHandleAtPoint(pointer, getObjectBounds(object), 'object', object.rotation ?? 0);
+      if (!handle) return false;
+      beginObjectResize(object, handle, pointer);
       return true;
     }
 
     const stroke = strokes.find((item) => item.id === selection.id);
-    if (!stroke || !isPointInResizeHandle(pointer, getPointBounds(stroke.points), 'stroke')) return false;
-    beginStrokeResize(stroke, 'se', pointer);
+    if (!stroke) return false;
+    const handle = getRotatedResizeHandleAtPoint(pointer, getPointBounds(stroke.points), 'stroke', stroke.rotation ?? 0);
+    if (!handle) return false;
+    beginStrokeResize(stroke, handle, pointer);
     return true;
   };
 
@@ -641,15 +848,36 @@ export function EditorScene({
           }
 
           if (tool === 'select') {
-            if (tryStartGroupResize(point)) return;
-            if (tryStartSelectedResize(point)) return;
-            if (tryStartGroupMove(point)) return;
-            if (selectFromIntersections(event, true)) return;
+            if (tryStartGroupRotate(rawPoint)) {
+              capturePointer(event);
+              return;
+            }
+            if (tryStartSelectedRotate(rawPoint)) {
+              capturePointer(event);
+              return;
+            }
+            if (tryStartGroupResize(point)) {
+              capturePointer(event);
+              return;
+            }
+            if (tryStartSelectedResize(point)) {
+              capturePointer(event);
+              return;
+            }
+            if (tryStartGroupMove(point)) {
+              capturePointer(event);
+              return;
+            }
+            if (selectFromIntersections(event, true)) {
+              capturePointer(event);
+              return;
+            }
 
             event.stopPropagation();
             capturePointer(event);
             onDragStateChange(null);
             onResizeStateChange(null);
+            onRotateStateChange(null);
             setMarqueeState({ start: point, current: point });
             setSelectionItems([]);
           }
@@ -676,6 +904,12 @@ export function EditorScene({
             return;
           }
 
+          if (rotateState && !readonly) {
+            event.stopPropagation();
+            updateRotate(rotateState, rawPoint);
+            return;
+          }
+
           if (marqueeState && tool === 'select' && !readonly) {
             event.stopPropagation();
             const nextMarquee = { ...marqueeState, current: point };
@@ -698,7 +932,11 @@ export function EditorScene({
           }
 
           if (dragState.type === 'group') {
-            onMoveGroup(dragState.items, { x: point.x - dragState.last.x, y: point.y - dragState.last.y });
+            const delta = { x: point.x - dragState.last.x, y: point.y - dragState.last.y };
+            onMoveGroup(dragState.items, delta);
+            setGroupTransformBox((current) =>
+              current?.itemsKey === groupSelectionKey ? { ...current, bounds: translateBounds(current.bounds, delta) } : current,
+            );
             onDragStateChange({ ...dragState, last: point });
             return;
           }
@@ -714,6 +952,7 @@ export function EditorScene({
           }
           onDragStateChange(null);
           onResizeStateChange(null);
+          onRotateStateChange(null);
           setMarqueeState(null);
         }}
       >
@@ -740,7 +979,10 @@ export function EditorScene({
               if (tool === 'erase') return;
               if (tool !== 'select') return;
               event.stopPropagation();
+              capturePointer(event);
               const point = toPoint(event);
+              if (tryStartGroupRotate(point)) return;
+              if (tryStartSelectedRotate(point)) return;
               if (tryStartGroupResize(point)) return;
               if (tryStartSelectedResize(point)) return;
               if (tryStartGroupMove(point)) return;
@@ -780,6 +1022,9 @@ export function EditorScene({
                 return;
               }
               const point = toPoint(event);
+              capturePointer(event);
+              if (tryStartGroupRotate(point)) return;
+              if (tryStartSelectedRotate(point)) return;
               if (tryStartGroupResize(point)) return;
               if (tryStartSelectedResize(point)) return;
               if (tryStartGroupMove(point)) return;
@@ -788,10 +1033,15 @@ export function EditorScene({
           />
         ))}
 
-      {!hideEditorChrome && groupSelection.length > 1 && groupBounds ? (
-        <group name={`selection:group:${groupSelection.length}`} position={[groupBounds.centerX, groupBounds.centerY, 0.08]}>
-          <SelectionFrame name="selection:group:frame" width={groupBounds.width + 28} height={groupBounds.height + 28} />
-          <ResizeHandleMarker name="selection:group:resize-handle:se" width={groupBounds.width} height={groupBounds.height} />
+      {!hideEditorChrome && groupSelection.length > 1 && effectiveGroupBounds ? (
+        <group
+          name={`selection:group:${groupSelection.length}`}
+          position={[effectiveGroupBounds.centerX, effectiveGroupBounds.centerY, 0.08]}
+          rotation={[0, 0, THREE.MathUtils.degToRad(effectiveGroupRotation)]}
+        >
+          <SelectionFrame name="selection:group:frame" width={effectiveGroupBounds.width} height={effectiveGroupBounds.height} padding={28} />
+          <ResizeHandleMarker name="selection:group:resize-handle:se" width={effectiveGroupBounds.width} height={effectiveGroupBounds.height} />
+          <RotationHandleMarker name="selection:group:rotation-handle" height={effectiveGroupBounds.height} />
         </group>
       ) : null}
 

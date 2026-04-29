@@ -5,7 +5,7 @@ import { SelectionDebugControls } from './SelectionDebugControls';
 type EditorDebugPanelProps = {
   selectedObject: WebGLObject | null;
   selectedStroke: Stroke | null;
-  onUpdateObject: (id: string, patch: Partial<Pick<WebGLObject, 'x' | 'y' | 'width' | 'height' | 'layer'>>) => void;
+  onUpdateObject: (id: string, patch: Partial<Pick<WebGLObject, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'layer'>>) => void;
   onUpdateStroke: (id: string, patch: Partial<Pick<Stroke, 'layer' | 'size'>>) => void;
 };
 

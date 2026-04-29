@@ -5,7 +5,7 @@ import { getStrokePoints } from 'perfect-freehand';
 import * as THREE from 'three';
 import { getPointBounds, layerToZ } from '../../../lib/sceneMath';
 import type { Point2D, Stroke } from '../../../types/editor';
-import { ResizeHandleMarker, SelectionFrame } from './SelectionVisuals';
+import { ResizeHandleMarker, RotationHandleMarker, SelectionFrame } from './SelectionVisuals';
 
 const clipperScale = 100;
 const strokeSmoothingOptions = {
@@ -182,22 +182,29 @@ export function StrokeMesh({
   onMoveStart,
 }: StrokeMeshProps) {
   const strokeSceneName = `stroke:${stroke.id}`;
+  const bounds = useMemo(() => getPointBounds(stroke.points), [stroke.points]);
+  const localPoints = useMemo(
+    () => stroke.points.map((point) => ({ x: point.x - bounds.centerX, y: point.y - bounds.centerY })),
+    [bounds.centerX, bounds.centerY, stroke.points],
+  );
   const geometry = useMemo(() => {
-    if (stroke.points.length < 2) return null;
+    if (localPoints.length < 2) return null;
     const pickerRadius = Math.max(stroke.size * 1.45, stroke.size + 1.8);
-    const visual = createRoundedStrokeGeometry(stroke.points, stroke.size);
+    const visual = createRoundedStrokeGeometry(localPoints, stroke.size);
     if (!visual) return null;
 
     return {
       visual,
-      picker: hitTestEnabled ? createRoundedStrokeGeometry(stroke.points, pickerRadius) : null,
+      picker: hitTestEnabled ? createRoundedStrokeGeometry(localPoints, pickerRadius) : null,
     };
-  }, [activelyDrawing, hitTestEnabled, stroke.points, stroke.size]);
-
-  const bounds = useMemo(() => getPointBounds(stroke.points), [stroke.points]);
+  }, [activelyDrawing, hitTestEnabled, localPoints, stroke.size]);
 
   return (
-    <group name={strokeSceneName} position={[0, 0, layerToZ(stroke.layer)]}>
+    <group
+      name={strokeSceneName}
+      position={[bounds.centerX, bounds.centerY, layerToZ(stroke.layer)]}
+      rotation={[0, 0, THREE.MathUtils.degToRad(stroke.rotation ?? 0)]}
+    >
       {geometry ? (
         <>
           {geometry.picker ? (
@@ -227,10 +234,19 @@ export function StrokeMesh({
         </>
       ) : null}
       {selected || groupSelected ? (
-        <group name={`${strokeSceneName}:selection`} position={[bounds.centerX, bounds.centerY, 0.04]}>
-          <SelectionFrame name={`${strokeSceneName}:selection-frame`} width={bounds.width + 22} height={bounds.height + 22} />
+        <group name={`${strokeSceneName}:selection`} position={[0, 0, 0.04]}>
+          <SelectionFrame name={`${strokeSceneName}:selection-frame`} width={bounds.width} height={bounds.height} padding={46} />
           {selected && canResize ? (
-            <ResizeHandleMarker name={`${strokeSceneName}:resize-handle:se`} width={bounds.width + 22} height={bounds.height + 22} />
+            <>
+              <ResizeHandleMarker
+                name={`${strokeSceneName}:resize-handle:se`}
+                width={bounds.width}
+                height={bounds.height}
+                offset={23}
+                handleSize={8}
+              />
+              <RotationHandleMarker name={`${strokeSceneName}:rotation-handle`} height={bounds.height} offset={23} distance={30} />
+            </>
           ) : null}
         </group>
       ) : null}
