@@ -38,7 +38,7 @@ type EditorToolbarProps = {
   onAddText: () => void;
   onAddImage: () => void;
   onImageFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  onExportImage: () => void;
+  onExportComparisonImages: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onToggleReadonly: () => void;
@@ -90,7 +90,7 @@ export function EditorToolbar({
   onAddText,
   onAddImage,
   onImageFileChange,
-  onExportImage,
+  onExportComparisonImages,
   onZoomIn,
   onZoomOut,
   onToggleReadonly,
@@ -172,7 +172,6 @@ export function EditorToolbar({
         accept="image/*"
         onChange={onImageFileChange}
       />
-
       <div
         className="editor-tool-stack"
         style={toolTabStyle}
@@ -317,7 +316,7 @@ export function EditorToolbar({
             <ToolButton label="이미지 추가" onClick={onAddImage}>
               <ImagePlus size={18} />
             </ToolButton>
-            <ToolButton label="이미지로 저장" onClick={onExportImage}>
+            <ToolButton label="비교 이미지 저장" onClick={onExportComparisonImages}>
               <Download size={18} />
             </ToolButton>
             <ToolButton label="축소" onClick={onZoomOut}>

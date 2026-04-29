@@ -14,7 +14,7 @@ function clamp(value: number, min: number, max: number) {
 export function EditorPage() {
   const editor = useEditorState(PAGE_BOUNDS);
   const [pageZoom, setPageZoom] = useState(1);
-  const [exportRequestId, setExportRequestId] = useState(0);
+  const [comparisonExportRequestId, setComparisonExportRequestId] = useState(0);
   const handleToolChange = (nextTool: typeof editor.tool) => {
     editor.setTool(nextTool);
 
@@ -40,7 +40,7 @@ export function EditorPage() {
         onAddText={editor.addText}
         onAddImage={editor.addImage}
         onImageFileChange={editor.addImageFromFile}
-        onExportImage={() => setExportRequestId((value) => value + 1)}
+        onExportComparisonImages={() => setComparisonExportRequestId((value) => value + 1)}
         onZoomIn={() => setPageZoom((value) => clamp(value * 1.2, 0.5, 3))}
         onZoomOut={() => setPageZoom((value) => clamp(value / 1.2, 0.5, 3))}
         onToggleReadonly={() => editor.setReadonly((value) => !value)}
@@ -67,7 +67,7 @@ export function EditorPage() {
         zoomCommand={null}
         drawingBounds={PAGE_BOUNDS}
         pageZoom={pageZoom}
-        exportRequestId={exportRequestId}
+        comparisonExportRequestId={comparisonExportRequestId}
         examPresets={editor.examPresets}
         activeExamPresetId={editor.activeExamPresetId}
         questionContent={<ExamPresentation exam={reactExams[0]} />}

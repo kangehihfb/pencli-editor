@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { ExamPreset } from "../../data/examPresets";
 import { exportPageImage } from "../../lib/exportPageImage";
+import { downloadClientPageExportComparison } from "../../lib/pageExportMethods";
 import { PAGE_HEIGHT, PAGE_WIDTH } from "../../lib/pageGeometry";
 import { PerformanceMonitor } from "./PerformanceMonitor";
 import { EditorScene } from "./scene/EditorScene";
@@ -17,6 +18,7 @@ type EditorStageProps = EditorSceneProps & {
   questionContent?: ReactNode;
   pageZoom?: number;
   exportRequestId?: number;
+  comparisonExportRequestId?: number;
 };
 
 export function EditorStage({
@@ -26,6 +28,7 @@ export function EditorStage({
   questionContent,
   pageZoom = 1,
   exportRequestId = 0,
+  comparisonExportRequestId = 0,
   ...sceneProps
 }: EditorStageProps) {
   const frameRef = useRef<HTMLDivElement>(null);
@@ -49,6 +52,7 @@ export function EditorStage({
   const shouldPassPointerToQuestion =
     Boolean(questionContent) &&
     (sceneProps.tool === "answer" || (usesFixedPage && sceneProps.tool === "pan"));
+  const isInkPassive = shouldPassPointerToQuestion;
 
   useEffect(() => {
     if (!usesFixedPage) {
@@ -102,6 +106,8 @@ export function EditorStage({
           webglCanvas,
           width: PAGE_WIDTH,
           height: PAGE_HEIGHT,
+          pageZoom,
+          stagePageScale,
         })
           .catch((error) => {
             console.error(error);
@@ -116,7 +122,54 @@ export function EditorStage({
       cancelled = true;
       setIsExporting(false);
     };
-  }, [exportRequestId, usesFixedPage]);
+  }, [exportRequestId, pageZoom, stagePageScale, usesFixedPage]);
+
+  useEffect(() => {
+    if (!comparisonExportRequestId || !usesFixedPage) return;
+
+    let cancelled = false;
+    setIsExporting(true);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+
+        const frame = frameRef.current;
+        const pageElement = frame?.querySelector<HTMLElement>(".stage-react-exam-page");
+        const webglCanvas = frame?.querySelector<HTMLCanvasElement>(
+          "canvas.stage-canvas, .stage-canvas canvas, canvas",
+        );
+        if (!pageElement || !webglCanvas) {
+          setIsExporting(false);
+          return;
+        }
+
+        downloadClientPageExportComparison({
+          pageElement,
+          webglCanvas,
+          width: PAGE_WIDTH,
+          height: PAGE_HEIGHT,
+          pageZoom,
+          stagePageScale,
+          editorState: {
+            strokes: sceneProps.strokes,
+            objects: sceneProps.objects,
+          },
+        })
+          .catch((error) => {
+            console.error(error);
+          })
+          .finally(() => {
+            setIsExporting(false);
+          });
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      setIsExporting(false);
+    };
+  }, [comparisonExportRequestId, pageZoom, stagePageScale, usesFixedPage]);
 
   return (
     <section className="stage">
@@ -140,21 +193,25 @@ export function EditorStage({
         style={canvasFrameStyle}
       >
         <div className={usesFixedPage ? "stage-page-scale-box" : "stage-page-scale-box is-fluid"}>
-        <div className="stage-canvas-shell">
-          {questionContent ? (
-            <div className="stage-react-exam-layer">
-              <div className="stage-react-exam-page">
-                {questionContent}
+          <div className="stage-canvas-shell">
+            {questionContent ? (
+              <div className="stage-react-exam-layer">
+                <div className="stage-react-exam-page">
+                  {questionContent}
+                </div>
               </div>
-            </div>
-          ) : null}
-          <div className={shouldPassPointerToQuestion ? "stage-canvas-overlay is-pass-through" : "stage-canvas-overlay"}>
+            ) : null}
+            <div
+              className={isInkPassive ? "stage-ink-layer is-passive" : "stage-ink-layer"}
+              style={isInkPassive ? { pointerEvents: "none" } : undefined}
+            >
               <Canvas
-                className="stage-canvas"
+                className="stage-canvas stage-ink-canvas"
                 dpr={[1, 2]}
                 gl={{ alpha: true, preserveDrawingBuffer: true }}
+                style={isInkPassive ? { pointerEvents: "none" } : undefined}
               >
-                <PerformanceMonitor />
+                {!isInkPassive ? <PerformanceMonitor /> : null}
                 <OrthographicCamera
                   makeDefault
                   position={[0, 0, 7]}
@@ -166,13 +223,14 @@ export function EditorStage({
                 <ambientLight intensity={1.4} />
                 <EditorScene
                   {...sceneProps}
-                  hideEditorChrome={isExporting}
+                  readonly={isInkPassive || sceneProps.readonly}
+                  hideEditorChrome={isInkPassive || isExporting}
                   renderSceneBackground={!questionContent}
                   viewportLocked={usesFixedPage}
                 />
               </Canvas>
             </div>
-        </div>
+          </div>
         </div>
       </div>
       <ExamLibraryOverlay
