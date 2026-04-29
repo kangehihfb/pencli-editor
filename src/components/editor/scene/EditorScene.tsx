@@ -92,6 +92,7 @@ export type EditorSceneProps = {
   readonly: boolean;
   strokes: Stroke[];
   objects: WebGLObject[];
+  activeStrokeId: string | null;
   selection: Selection;
   groupSelection: SelectionItem[];
   dragState: DragState;
@@ -128,6 +129,7 @@ export function EditorScene({
   readonly,
   strokes,
   objects,
+  activeStrokeId,
   selection,
   groupSelection,
   dragState,
@@ -762,6 +764,8 @@ export function EditorScene({
             key={stroke.id}
             stroke={stroke}
             renderVisual={renderVisualLayer}
+            activelyDrawing={tool === 'pen' && isDrawingRef.current && stroke.id === activeStrokeId}
+            hitTestEnabled={!readonly && (tool === 'select' || tool === 'erase')}
             selected={!hideEditorChrome && selection?.type === 'stroke' && selection.id === stroke.id}
             groupSelected={!hideEditorChrome && isSelectedItem('stroke', stroke.id)}
             canMove={tool === 'select'}

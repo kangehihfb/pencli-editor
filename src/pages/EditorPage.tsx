@@ -59,6 +59,7 @@ export function EditorPage() {
         readonly={editor.readonly}
         strokes={editor.strokes}
         objects={editor.objects}
+        activeStrokeId={editor.activeStrokeId}
         selection={editor.selection}
         groupSelection={editor.groupSelection}
         dragState={editor.dragState}

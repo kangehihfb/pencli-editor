@@ -568,6 +568,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     zoomCommand,
     strokes,
     objects,
+    activeStrokeId,
     selectedObject,
     selectedStroke,
     drawingBounds,

@@ -16,8 +16,8 @@ const editorPointerPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 export const makeId = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
 export const layerToZ = (layer: number) => layer * 0.02;
 
-const strokePointMinDistance = 0.6;
-const strokePointMaxSpacing = 1.8;
+const strokePointMinDistance = 0.35;
+const strokePointMaxSpacing = 1.2;
 
 export function getEditorPointerPoint(event: ThreeEvent<PointerEvent>): Point2D {
   const point = new THREE.Vector3();
@@ -275,26 +275,33 @@ export function getNextStrokePoints(points: Point2D[], point: Point2D) {
 }
 
 export function getSmoothedStrokePoints(points: Point2D[]) {
-  if (points.length < 4) return points;
+  if (points.length < 3) return points;
 
-  const smoothed: Point2D[] = [points[0]];
+  const smoothed: Point2D[] = [];
   for (let index = 0; index < points.length - 1; index += 1) {
     const current = points[index];
     const next = points[index + 1];
     smoothed.push(
+      current,
       {
-        x: current.x * 0.75 + next.x * 0.25,
-        y: current.y * 0.75 + next.y * 0.25,
-      },
-      {
-        x: current.x * 0.25 + next.x * 0.75,
-        y: current.y * 0.25 + next.y * 0.75,
+        x: current.x * 0.5 + next.x * 0.5,
+        y: current.y * 0.5 + next.y * 0.5,
       },
     );
   }
   smoothed.push(points[points.length - 1]);
 
-  return smoothed;
+  const relaxed = smoothed.map((point, index) => {
+    if (index === 0 || index === smoothed.length - 1) return point;
+    const previous = smoothed[index - 1];
+    const next = smoothed[index + 1];
+    return {
+      x: point.x * 0.55 + (previous.x + next.x) * 0.225,
+      y: point.y * 0.55 + (previous.y + next.y) * 0.225,
+    };
+  });
+
+  return relaxed;
 }
 
 export function getSceneHits(event: ThreeEvent<PointerEvent>): SceneHit[] {
