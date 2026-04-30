@@ -13,7 +13,15 @@ import type {
 
 const editorPointerPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 
-export const makeId = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
+export const makeId = (prefix: string) => {
+  const randomUUID = globalThis.crypto?.randomUUID;
+  if (typeof randomUUID === 'function') {
+    return `${prefix}_${randomUUID.call(globalThis.crypto)}`;
+  }
+
+  const randomPart = Math.random().toString(36).slice(2, 10);
+  return `${prefix}_${Date.now().toString(36)}_${randomPart}`;
+};
 export const layerToZ = (layer: number) => layer * 0.02;
 const resizeHandles: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 

@@ -21,6 +21,118 @@ type EditorStageProps = EditorSceneProps & {
   comparisonExportRequestId?: number;
 };
 
+type PencilReportPointerEvent = {
+  type: string;
+  pointerType: string;
+  pressure: number;
+  tiltX: number;
+  tiltY: number;
+  twist: number;
+  clientX: number;
+  clientY: number;
+  timeStamp: number;
+};
+
+type PencilReportTouchEvent = {
+  type: string;
+  touches: number;
+  changedTouches: number;
+  clientX: number | null;
+  clientY: number | null;
+  force: number | null;
+  timeStamp: number;
+};
+
+function shouldShowPencilReport() {
+  if (typeof window === "undefined") return false;
+  const isEnabledValue = (value: string | null) => value === "" || value === "1" || value === "true";
+  const searchParams = new URLSearchParams(window.location.search);
+  if (isEnabledValue(searchParams.get("pencilReport"))) return true;
+
+  const hash = window.location.hash.replace(/^#\??/, "");
+  const hashParams = new URLSearchParams(hash);
+  if (isEnabledValue(hashParams.get("pencilReport"))) return true;
+
+  return window.localStorage.getItem("pencilReport") === "1";
+}
+
+function getTouchForce(touch: unknown) {
+  const candidate = touch as { force?: unknown };
+  return typeof candidate.force === "number" ? candidate.force : null;
+}
+
+function getPressureSummary(events: PencilReportPointerEvent[]) {
+  const values = events
+    .map((event) => event.pressure)
+    .filter((value) => Number.isFinite(value));
+  if (values.length === 0) return "확인 불가";
+  return `${Math.min(...values).toFixed(2)}~${Math.max(...values).toFixed(2)}`;
+}
+
+function getPointerTypeSummary(events: PencilReportPointerEvent[]) {
+  const values = [...new Set(events.map((event) => event.pointerType).filter(Boolean))];
+  return values.length > 0 ? values.join(", ") : "확인 불가";
+}
+
+function downloadTextFile(filename: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function markdownCell(value: unknown) {
+  return String(value ?? "")
+    .replace(/\|/g, "\\|")
+    .replace(/\n/g, "<br>");
+}
+
+function countPointerEvents(events: PencilReportPointerEvent[], type: string, pointerType?: string) {
+  return events.filter((event) => event.type === type && (!pointerType || event.pointerType === pointerType)).length;
+}
+
+function countTouchEvents(events: PencilReportTouchEvent[], type: string) {
+  return events.filter((event) => event.type === type).length;
+}
+
+function getDeviceProfile(device: string) {
+  if (device.includes("iPad")) {
+    return {
+      summaryDevice: "iPad",
+      input: "Apple Pencil",
+      browser: "Safari",
+      orientationLabel: "화면 방향",
+      extraEventLabel: "touch 이벤트 동시 발생",
+      sectionTitle: "iPad + Apple Pencil",
+    };
+  }
+
+  if (device.includes("Wacom")) {
+    return {
+      summaryDevice: "Windows PC",
+      input: "Wacom",
+      browser: "Chrome / Edge",
+      orientationLabel: "화면 배율",
+      extraEventLabel: "드라이버/브라우저 특이사항",
+      sectionTitle: "Windows + Wacom",
+    };
+  }
+
+  return {
+    summaryDevice: "Galaxy Tab",
+    input: "S Pen",
+    browser: "Chrome / Samsung Internet",
+    orientationLabel: "화면 방향",
+    extraEventLabel: "손바닥 터치 영향",
+    sectionTitle: "Galaxy Tab + S Pen",
+  };
+}
+
 export function EditorStage({
   examPresets,
   activeExamPresetId,
@@ -32,9 +144,20 @@ export function EditorStage({
   ...sceneProps
 }: EditorStageProps) {
   const frameRef = useRef<HTMLDivElement>(null);
+  const inputCaptureRef = useRef<HTMLDivElement>(null);
+  const isInputDrawingRef = useRef(false);
+  const activeInputTouchIdentifierRef = useRef<number | null>(null);
+  const strokesLengthRef = useRef(sceneProps.strokes.length);
+  const reportStartStrokeCountRef = useRef(0);
+  const reportPointerEventsRef = useRef<PencilReportPointerEvent[]>([]);
+  const reportTouchEventsRef = useRef<PencilReportTouchEvent[]>([]);
   const [fitScale, setFitScale] = useState(1);
   const [isViewportSyncing, setIsViewportSyncing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [showPencilReport] = useState(shouldShowPencilReport);
+  const [isPencilReportRecording, setIsPencilReportRecording] = useState(false);
+  const [pencilReportDevice, setPencilReportDevice] = useState("iPad + Apple Pencil");
+  const [pencilReportResult, setPencilReportResult] = useState("");
   const activeExamIndex = examPresets.findIndex(
     (preset) => preset.id === activeExamPresetId,
   );
@@ -54,6 +177,510 @@ export function EditorStage({
     Boolean(questionContent) &&
     (sceneProps.tool === "answer" || (usesFixedPage && sceneProps.tool === "pan"));
   const isInkPassive = shouldPassPointerToQuestion;
+  const {
+    drawingBounds,
+    onAppendStrokePoint,
+    onBeginStroke,
+    onEndStroke,
+    readonly,
+    tool,
+  } = sceneProps;
+  const shouldCaptureInkInput = tool === "pen" && !readonly && !isInkPassive;
+
+  useEffect(() => {
+    strokesLengthRef.current = sceneProps.strokes.length;
+  }, [sceneProps.strokes.length]);
+
+  useEffect(() => {
+    if (!showPencilReport || !isPencilReportRecording) return;
+
+    const isReportPanelEvent = (event: Event) =>
+      event.target instanceof Element && Boolean(event.target.closest(".pencil-report-panel"));
+
+    const handlePointerEvent = (event: PointerEvent) => {
+      if (isReportPanelEvent(event)) return;
+      reportPointerEventsRef.current = [
+        ...reportPointerEventsRef.current,
+        {
+          type: event.type,
+          pointerType: event.pointerType,
+          pressure: event.pressure,
+          tiltX: event.tiltX,
+          tiltY: event.tiltY,
+          twist: event.twist,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          timeStamp: event.timeStamp,
+        },
+      ].slice(-500);
+    };
+
+    const handleTouchEvent = (event: TouchEvent) => {
+      if (isReportPanelEvent(event)) return;
+      const touch = event.changedTouches.item(0);
+      reportTouchEventsRef.current = [
+        ...reportTouchEventsRef.current,
+        {
+          type: event.type,
+          touches: event.touches.length,
+          changedTouches: event.changedTouches.length,
+          clientX: touch?.clientX ?? null,
+          clientY: touch?.clientY ?? null,
+          force: touch ? getTouchForce(touch) : null,
+          timeStamp: event.timeStamp,
+        },
+      ].slice(-500);
+    };
+
+    window.addEventListener("pointerdown", handlePointerEvent, true);
+    window.addEventListener("pointermove", handlePointerEvent, true);
+    window.addEventListener("pointerup", handlePointerEvent, true);
+    window.addEventListener("pointercancel", handlePointerEvent, true);
+    window.addEventListener("touchstart", handleTouchEvent, true);
+    window.addEventListener("touchmove", handleTouchEvent, true);
+    window.addEventListener("touchend", handleTouchEvent, true);
+    window.addEventListener("touchcancel", handleTouchEvent, true);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerEvent, true);
+      window.removeEventListener("pointermove", handlePointerEvent, true);
+      window.removeEventListener("pointerup", handlePointerEvent, true);
+      window.removeEventListener("pointercancel", handlePointerEvent, true);
+      window.removeEventListener("touchstart", handleTouchEvent, true);
+      window.removeEventListener("touchmove", handleTouchEvent, true);
+      window.removeEventListener("touchend", handleTouchEvent, true);
+      window.removeEventListener("touchcancel", handleTouchEvent, true);
+    };
+  }, [isPencilReportRecording, showPencilReport]);
+
+  const startPencilReport = () => {
+    reportStartStrokeCountRef.current = strokesLengthRef.current;
+    reportPointerEventsRef.current = [];
+    reportTouchEventsRef.current = [];
+    setPencilReportResult("");
+    setIsPencilReportRecording(true);
+  };
+
+  const finishPencilReport = () => {
+    const pointerEvents = reportPointerEventsRef.current;
+    const touchEvents = reportTouchEventsRef.current;
+    const startStrokeCount = reportStartStrokeCountRef.current;
+    const endStrokeCount = strokesLengthRef.current;
+    const strokeDelta = endStrokeCount - startStrokeCount;
+    const pointerType = getPointerTypeSummary(pointerEvents);
+    const pressure = getPressureSummary(pointerEvents);
+    const firstStrokeMissing = strokeDelta > 0 ? "없음" : "있음";
+    const hasPenPointer = pointerEvents.some((event) => event.pointerType === "pen");
+    const hasPressureVariation = new Set(pointerEvents.map((event) => event.pressure.toFixed(2))).size > 2;
+    const result = strokeDelta <= 0 ? "FAIL" : hasPenPointer && hasPressureVariation ? "PASS" : "WARN";
+    const secureContext = String(window.isSecureContext);
+    const generatedAt = new Date().toISOString();
+    const deviceProfile = getDeviceProfile(pencilReportDevice);
+    const pointerDownCount = countPointerEvents(pointerEvents, "pointerdown");
+    const pointerMoveCount = countPointerEvents(pointerEvents, "pointermove");
+    const pointerUpCount = countPointerEvents(pointerEvents, "pointerup");
+    const pointerCancelCount = countPointerEvents(pointerEvents, "pointercancel");
+    const penPointerDownCount = countPointerEvents(pointerEvents, "pointerdown", "pen");
+    const penPointerMoveCount = countPointerEvents(pointerEvents, "pointermove", "pen");
+    const touchStartCount = countTouchEvents(touchEvents, "touchstart");
+    const touchMoveCount = countTouchEvents(touchEvents, "touchmove");
+    const touchEndCount = countTouchEvents(touchEvents, "touchend");
+    const touchCancelCount = countTouchEvents(touchEvents, "touchcancel");
+    const firstPointerDownResult = pointerDownCount > 0 ? "정상" : "누락";
+    const pointerMoveContinuity = pointerMoveCount > 0 ? "정상" : "끊김";
+    const touchConcurrent = touchEvents.length > 0 ? "있음" : "없음";
+    const tiltSupport = pointerEvents.some((event) => event.tiltX !== 0 || event.tiltY !== 0) ? "지원" : "미지원 또는 미확인";
+    const handwritingQuality = result === "FAIL" ? "FAIL" : "시각 확인 필요";
+    const coordinateError = "시각 확인 필요";
+    const exportIncluded = "확인 필요";
+    const notes = [
+      window.isSecureContext ? "secure context" : "non-secure context",
+      typeof globalThis.crypto?.randomUUID === "function" ? "randomUUID 사용 가능" : "makeId fallback 필요",
+      shouldCaptureInkInput ? "capture layer 사용" : "capture layer 미사용",
+      hasPenPointer ? "pen pointer 확인" : "pen pointer 미확인",
+      hasPressureVariation ? "pressure 변화 확인" : "pressure 변화 제한",
+      `pointer events ${pointerEvents.length}`,
+      `touch events ${touchEvents.length}`,
+    ].join(", ");
+    const summaryRows = [
+      {
+        device: "iPad",
+        input: "Apple Pencil",
+        os: pencilReportDevice.includes("iPad") ? navigator.platform : "",
+        browser: "Safari",
+        url: pencilReportDevice.includes("iPad") ? window.location.href : "",
+        secure: pencilReportDevice.includes("iPad") ? secureContext : "",
+        pointerType: pencilReportDevice.includes("iPad") ? pointerType : "",
+        pressure: pencilReportDevice.includes("iPad") ? pressure : "",
+        firstStrokeMissing: pencilReportDevice.includes("iPad") ? firstStrokeMissing : "",
+        coordinateError: pencilReportDevice.includes("iPad") ? coordinateError : "",
+        quality: pencilReportDevice.includes("iPad") ? handwritingQuality : "",
+        result: pencilReportDevice.includes("iPad") ? result : "TBD",
+        evidence: pencilReportDevice.includes("iPad") ? "다운로드된 JSON/MD, 화면 캡처 추가 필요" : "",
+      },
+      {
+        device: "Windows PC",
+        input: "Wacom",
+        os: pencilReportDevice.includes("Wacom") ? navigator.platform : "",
+        browser: "Chrome/Edge",
+        url: pencilReportDevice.includes("Wacom") ? window.location.href : "",
+        secure: pencilReportDevice.includes("Wacom") ? secureContext : "",
+        pointerType: pencilReportDevice.includes("Wacom") ? pointerType : "",
+        pressure: pencilReportDevice.includes("Wacom") ? pressure : "",
+        firstStrokeMissing: pencilReportDevice.includes("Wacom") ? firstStrokeMissing : "",
+        coordinateError: pencilReportDevice.includes("Wacom") ? coordinateError : "",
+        quality: pencilReportDevice.includes("Wacom") ? handwritingQuality : "",
+        result: pencilReportDevice.includes("Wacom") ? result : "TBD",
+        evidence: pencilReportDevice.includes("Wacom") ? "다운로드된 JSON/MD, 화면 캡처 추가 필요" : "",
+      },
+      {
+        device: "Galaxy Tab",
+        input: "S Pen",
+        os: pencilReportDevice.includes("Galaxy") ? navigator.platform : "",
+        browser: "Chrome/Samsung Internet",
+        url: pencilReportDevice.includes("Galaxy") ? window.location.href : "",
+        secure: pencilReportDevice.includes("Galaxy") ? secureContext : "",
+        pointerType: pencilReportDevice.includes("Galaxy") ? pointerType : "",
+        pressure: pencilReportDevice.includes("Galaxy") ? pressure : "",
+        firstStrokeMissing: pencilReportDevice.includes("Galaxy") ? firstStrokeMissing : "",
+        coordinateError: pencilReportDevice.includes("Galaxy") ? coordinateError : "",
+        quality: pencilReportDevice.includes("Galaxy") ? handwritingQuality : "",
+        result: pencilReportDevice.includes("Galaxy") ? result : "TBD",
+        evidence: pencilReportDevice.includes("Galaxy") ? "다운로드된 JSON/MD, 화면 캡처 추가 필요" : "",
+      },
+    ];
+
+    const summaryTable = summaryRows
+      .map((row) =>
+        `| ${[
+          row.device,
+          row.input,
+          row.os,
+          row.browser,
+          row.url,
+          row.secure,
+          row.pointerType,
+          row.pressure,
+          row.firstStrokeMissing,
+          row.coordinateError,
+          row.quality,
+          row.result,
+          row.evidence,
+        ].map(markdownCell).join(" | ")} |`,
+      )
+      .join("\n");
+
+    const currentDeviceDetail = `## ${deviceProfile.sectionTitle}
+
+| 항목 | 값 |
+|---|---|
+| 테스트 일시 | ${markdownCell(generatedAt)} |
+| 기기 모델 | ${markdownCell(pencilReportDevice)} |
+| 입력 장비 | ${markdownCell(deviceProfile.input)} |
+| OS 버전 | ${markdownCell(navigator.platform)} |
+| 브라우저 | ${markdownCell(navigator.userAgent)} |
+| 테스트 URL | ${markdownCell(window.location.href)} |
+| Secure Context | ${markdownCell(secureContext)} |
+| ${deviceProfile.orientationLabel} | 시각 확인 필요 |
+| 브라우저 줌/페이지 줌 | visualViewport scale ${markdownCell(window.visualViewport?.scale ?? "확인 불가")} |
+| 증빙 이미지 경로 | 화면 캡처 또는 export 이미지 추가 필요 |
+
+### 입력 이벤트
+
+| 항목 | 결과 |
+|---|---|
+| pointerType | ${markdownCell(pointerType)} |
+| pressure 범위 | ${markdownCell(pressure)} |
+| tilt 지원 | ${markdownCell(tiltSupport)} |
+| ${deviceProfile.extraEventLabel} | ${markdownCell(touchConcurrent)} |
+| 첫 pointerdown 수신 | ${markdownCell(firstPointerDownResult)} |
+| pointermove 연속성 | ${markdownCell(pointerMoveContinuity)} |
+| pointerdown / move / up / cancel | ${pointerDownCount} / ${pointerMoveCount} / ${pointerUpCount} / ${pointerCancelCount} |
+| pen pointerdown / pen pointermove | ${penPointerDownCount} / ${penPointerMoveCount} |
+| touchstart / move / end / cancel | ${touchStartCount} / ${touchMoveCount} / ${touchEndCount} / ${touchCancelCount} |
+
+### 안녕하세요 작성 결과
+
+| 항목 | 결과 |
+|---|---|
+| 첫 획 누락 | ${markdownCell(firstStrokeMissing)} |
+| 획 끝 잘림 | 시각 확인 필요 |
+| 선 끊김 | 시각 확인 필요 |
+| 좌표 오차 | ${markdownCell(coordinateError)} |
+| 빠른 필기 품질 | 시각 확인 필요 |
+| 느린 필기 품질 | 시각 확인 필요 |
+| 필압 반영 체감 | ${hasPressureVariation ? "수집값 변화 있음" : "변화 제한 또는 미확인"} |
+| 지연감 | 시각 확인 필요 |
+| export 이미지 포함 | ${markdownCell(exportIncluded)} |
+| 최종 결과 | ${markdownCell(result)} |
+
+메모:
+
+- ${markdownCell(notes)}
+`;
+
+    const markdown = `# Pencil Handwriting Device Report
+
+Generated at: ${generatedAt}
+테스트 문구: 안녕하세요
+
+목적: 실제 펜슬/스타일러스 장비로 동일한 문구를 작성하고, 입력 이벤트/필기 품질/좌표/저장 결과를 같은 기준으로 기록한다.
+
+## 요약표
+
+| 기기 | 입력 장비 | OS | 브라우저 | URL | Secure Context | pointerType | pressure | 첫 획 누락 | 좌표 오차 | 필기 품질 | 결과 | 증빙 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+${summaryTable}
+
+## 공통 테스트 절차
+
+1. 테스트 URL에 접속한다.
+2. 펜 도구를 선택한다.
+3. 캔버스 중앙에 안녕하세요를 자연스럽게 1회 작성한다.
+4. 같은 문구를 빠르게 1회 더 작성한다.
+5. 같은 문구를 천천히 1회 더 작성한다.
+6. undo/redo, 지우개, export 결과를 확인한다.
+7. 화면 캡처 또는 export 이미지를 증빙으로 저장한다.
+
+${currentDeviceDetail}
+
+## 미실행 기기 섹션
+
+아래 기기는 동일한 절차로 별도 리포트를 생성한 뒤 요약표에 합산한다.
+
+### iPad + Apple Pencil
+
+- 현재 리포트 대상 여부: ${pencilReportDevice.includes("iPad") ? "예" : "아니오"}
+
+### Windows + Wacom
+
+- 현재 리포트 대상 여부: ${pencilReportDevice.includes("Wacom") ? "예" : "아니오"}
+
+### Galaxy Tab + S Pen
+
+- 현재 리포트 대상 여부: ${pencilReportDevice.includes("Galaxy") ? "예" : "아니오"}
+
+## 판정 기준
+
+| 결과 | 기준 |
+|---|---|
+| PASS | 안녕하세요 작성 시 첫 획 누락, 선 끊김, 좌표 오차가 없고 export에도 정상 포함된다. |
+| WARN | 작성은 가능하지만 지연, 약한 끊김, 필압 미지원, pointerType 미인식 등 품질 이슈가 있다. |
+| FAIL | stroke 생성 실패, 필기 불가, 좌표가 크게 어긋남, export 누락 등 핵심 기능이 깨진다. |
+
+## Summary
+
+- startStrokeCount: ${startStrokeCount}
+- endStrokeCount: ${endStrokeCount}
+- strokeDelta: ${strokeDelta}
+- pointerEventCount: ${pointerEvents.length}
+- touchEventCount: ${touchEvents.length}
+- pointerdown/move/up/cancel: ${pointerDownCount}/${pointerMoveCount}/${pointerUpCount}/${pointerCancelCount}
+- touchstart/move/end/cancel: ${touchStartCount}/${touchMoveCount}/${touchEndCount}/${touchCancelCount}
+
+## Raw Pointer Events
+
+\`\`\`json
+${JSON.stringify(pointerEvents.slice(-80), null, 2)}
+\`\`\`
+
+## Raw Touch Events
+
+\`\`\`json
+${JSON.stringify(touchEvents.slice(-80), null, 2)}
+\`\`\`
+`;
+
+    const json = JSON.stringify(
+      {
+        generatedAt,
+        testPhrase: "안녕하세요",
+        device: pencilReportDevice,
+        url: window.location.href,
+        secureContext: window.isSecureContext,
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        pointerType,
+        pressure,
+        tiltSupport,
+        firstStrokeMissing,
+        result,
+        notes,
+        eventCounts: {
+          pointerDown: pointerDownCount,
+          pointerMove: pointerMoveCount,
+          pointerUp: pointerUpCount,
+          pointerCancel: pointerCancelCount,
+          penPointerDown: penPointerDownCount,
+          penPointerMove: penPointerMoveCount,
+          touchStart: touchStartCount,
+          touchMove: touchMoveCount,
+          touchEnd: touchEndCount,
+          touchCancel: touchCancelCount,
+        },
+        startStrokeCount,
+        endStrokeCount,
+        strokeDelta,
+        pointerEvents,
+        touchEvents,
+      },
+      null,
+      2,
+    );
+
+    setIsPencilReportRecording(false);
+    setPencilReportResult(markdown);
+    downloadTextFile("pencil-handwriting-device-report.md", markdown, "text/markdown;charset=utf-8");
+    downloadTextFile("pencil-handwriting-device-report.json", json, "application/json;charset=utf-8");
+  };
+
+  useEffect(() => {
+    if (!shouldCaptureInkInput) return;
+
+    const captureElement = inputCaptureRef.current;
+    if (!captureElement) return;
+
+    const getInputPoint = (clientX: number, clientY: number) => {
+      const shell = captureElement.closest<HTMLElement>(".stage-canvas-shell");
+      if (!shell || !drawingBounds) return null;
+
+      const rect = shell.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+
+      return {
+        x: Math.min(
+          Math.max(((clientX - rect.left) / rect.width) * PAGE_WIDTH, drawingBounds.minX),
+          drawingBounds.maxX,
+        ),
+        y: Math.min(
+          Math.max(((clientY - rect.top) / rect.height) * PAGE_HEIGHT, drawingBounds.minY),
+          drawingBounds.maxY,
+        ),
+      };
+    };
+
+    const beginStroke = (clientX: number, clientY: number) => {
+      if (isInputDrawingRef.current) return true;
+
+      const point = getInputPoint(clientX, clientY);
+      if (!point) return false;
+
+      isInputDrawingRef.current = true;
+      onBeginStroke(point);
+      return true;
+    };
+
+    const appendStroke = (clientX: number, clientY: number) => {
+      if (!isInputDrawingRef.current && !beginStroke(clientX, clientY)) return;
+
+      const point = getInputPoint(clientX, clientY);
+      if (!point) return;
+
+      onAppendStrokePoint(point);
+    };
+
+    const finishStroke = () => {
+      if (!isInputDrawingRef.current) return;
+
+      isInputDrawingRef.current = false;
+      activeInputTouchIdentifierRef.current = null;
+      onEndStroke();
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!beginStroke(event.clientX, event.clientY)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      try {
+        captureElement.setPointerCapture(event.pointerId);
+      } catch {
+        // iPad Safari can reject capture when the pointer lifecycle is already changing.
+      }
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!isInputDrawingRef.current && event.pressure <= 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      appendStroke(event.clientX, event.clientY);
+    };
+
+    const handlePointerEnd = (event: PointerEvent) => {
+      if (!isInputDrawingRef.current) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      finishStroke();
+      try {
+        if (captureElement.hasPointerCapture(event.pointerId)) {
+          captureElement.releasePointerCapture(event.pointerId);
+        }
+      } catch {
+        // Ignore cross-browser pointer capture cleanup differences.
+      }
+    };
+
+    const getActiveTouch = (touches: TouchList) => {
+      const activeIdentifier = activeInputTouchIdentifierRef.current;
+      if (activeIdentifier === null) return touches.item(0);
+
+      for (let index = 0; index < touches.length; index += 1) {
+        const touch = touches.item(index);
+        if (touch?.identifier === activeIdentifier) return touch;
+      }
+
+      return null;
+    };
+
+    const handleTouchStart = (event: TouchEvent) => {
+      const touch = event.changedTouches.item(0);
+      if (!touch || !beginStroke(touch.clientX, touch.clientY)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      activeInputTouchIdentifierRef.current = touch.identifier;
+    };
+
+    const handleTouchMove = (event: TouchEvent) => {
+      const touch = getActiveTouch(event.changedTouches);
+      if (!touch) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      appendStroke(touch.clientX, touch.clientY);
+    };
+
+    const handleTouchEnd = (event: TouchEvent) => {
+      if (!isInputDrawingRef.current || !getActiveTouch(event.changedTouches)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      finishStroke();
+    };
+
+    captureElement.addEventListener("pointerdown", handlePointerDown, { capture: true });
+    captureElement.addEventListener("pointermove", handlePointerMove, { capture: true });
+    captureElement.addEventListener("pointerup", handlePointerEnd, { capture: true });
+    captureElement.addEventListener("pointercancel", handlePointerEnd, { capture: true });
+    captureElement.addEventListener("touchstart", handleTouchStart, { capture: true, passive: false });
+    captureElement.addEventListener("touchmove", handleTouchMove, { capture: true, passive: false });
+    captureElement.addEventListener("touchend", handleTouchEnd, { capture: true, passive: false });
+    captureElement.addEventListener("touchcancel", handleTouchEnd, { capture: true, passive: false });
+
+    return () => {
+      captureElement.removeEventListener("pointerdown", handlePointerDown, true);
+      captureElement.removeEventListener("pointermove", handlePointerMove, true);
+      captureElement.removeEventListener("pointerup", handlePointerEnd, true);
+      captureElement.removeEventListener("pointercancel", handlePointerEnd, true);
+      captureElement.removeEventListener("touchstart", handleTouchStart, true);
+      captureElement.removeEventListener("touchmove", handleTouchMove, true);
+      captureElement.removeEventListener("touchend", handleTouchEnd, true);
+      captureElement.removeEventListener("touchcancel", handleTouchEnd, true);
+    };
+  }, [drawingBounds, onAppendStrokePoint, onBeginStroke, onEndStroke, shouldCaptureInkInput]);
 
   useEffect(() => {
     if (!usesFixedPage) {
@@ -286,6 +913,9 @@ export function EditorStage({
                 />
               </Canvas>
             </div>
+            {shouldCaptureInkInput ? (
+              <div ref={inputCaptureRef} className="stage-input-capture" aria-hidden="true" />
+            ) : null}
           </div>
         </div>
       </div>
@@ -294,6 +924,48 @@ export function EditorStage({
         activePresetId={activeExamPresetId}
         onSelectPreset={onSelectExamPreset}
       />
+      {showPencilReport ? (
+        <aside className="pencil-report-panel">
+          <div className="pencil-report-header">
+            <strong>실기기 필기 리포트</strong>
+            <span>{isPencilReportRecording ? "recording" : "ready"}</span>
+          </div>
+          <label className="pencil-report-field">
+            <span>기기/펜</span>
+            <select
+              value={pencilReportDevice}
+              onChange={(event) => setPencilReportDevice(event.target.value)}
+              disabled={isPencilReportRecording}
+            >
+              <option>iPad + Apple Pencil</option>
+              <option>Windows + Wacom</option>
+              <option>Galaxy Tab + S Pen</option>
+            </select>
+          </label>
+          <div className="pencil-report-grid">
+            <span>문구</span>
+            <strong>안녕하세요</strong>
+            <span>strokes</span>
+            <strong>{sceneProps.strokes.length}</strong>
+            <span>secure</span>
+            <strong>{typeof window === "undefined" ? "n/a" : String(window.isSecureContext)}</strong>
+          </div>
+          <div className="pencil-report-actions">
+            <button type="button" onClick={startPencilReport} disabled={isPencilReportRecording}>
+              Start
+            </button>
+            <button type="button" onClick={finishPencilReport} disabled={!isPencilReportRecording}>
+              Finish & Download
+            </button>
+          </div>
+          <p>
+            Start를 누른 뒤 캔버스에 <strong>안녕하세요</strong>를 쓰고 Finish를 누르면 Markdown/JSON 리포트가 저장됩니다.
+          </p>
+          {pencilReportResult ? (
+            <textarea readOnly value={pencilReportResult} aria-label="생성된 펜슬 입력 리포트" />
+          ) : null}
+        </aside>
+      ) : null}
     </section>
   );
 }

@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "export:browser-screenshot": "node scripts/export-browser-screenshot.mjs",
+    "test:pencil-input": "node scripts/pencil-input-compat-report.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
