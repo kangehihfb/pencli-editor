@@ -1,6 +1,7 @@
 import type { ThreeEvent } from '@react-three/fiber';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as THREE from 'three';
+import { loadEditorTextFont } from '../../../lib/editorTextFonts';
 import { createImageObjectTexture, createTextObjectTexture } from '../../../lib/objectTexture';
 import { layerToZ } from '../../../lib/sceneMath';
 import type { WebGLObject } from '../../../types/editor';
@@ -27,8 +28,27 @@ export function WebGLObjectMesh({
   onSelect,
   onStartTextEdit,
 }: WebGLObjectMeshProps) {
+  const [fontReadyRevision, setFontReadyRevision] = useState(0);
   const objectSceneName = `object:${object.kind}:${object.id}`;
   const isExamImage = object.id === 'object_exam_active';
+
+  useEffect(() => {
+    if (object.kind !== 'text') return;
+
+    let cancelled = false;
+    loadEditorTextFont(object.fontFamily)
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          setFontReadyRevision((value) => value + 1);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [object.fontFamily, object.kind]);
+
   const texture = useMemo(() => {
     if (object.kind === 'image') {
       return createImageObjectTexture({
@@ -42,11 +62,12 @@ export function WebGLObjectMesh({
         width: object.width,
         height: object.height,
         fontSize: object.fontSize,
+        fontFamily: object.fontFamily,
         color: object.color,
       });
     }
     return null;
-  }, [object.color, object.fontSize, object.height, object.imageBackground, object.imageSrc, object.kind, object.text, object.width]);
+  }, [fontReadyRevision, object.color, object.fontFamily, object.fontSize, object.height, object.imageBackground, object.imageSrc, object.kind, object.text, object.width]);
   const shouldRenderVisual = renderVisual && !editing;
 
   return (

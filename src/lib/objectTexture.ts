@@ -1,13 +1,13 @@
 import * as THREE from 'three';
+import { DEFAULT_TEXT_FONT_FAMILY, getEditorTextCanvasFont } from './editorTextFonts';
 
 export const DEFAULT_TEXT_FONT_SIZE = 32;
 export const MIN_TEXT_FONT_SIZE = 10;
 export const MAX_TEXT_FONT_SIZE = 180;
 export const DEFAULT_TEXT_COLOR = '#1f2a44';
 
-const textFontWeight = 700;
-const textFontFamily = '"Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 const textLineHeightRatio = 1.22;
+const targetTextTexturePixelsPerEm = 160;
 
 function configureTexture(texture: THREE.Texture) {
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -24,6 +24,7 @@ type TextTextureOptions = {
   width: number;
   height: number;
   fontSize?: number;
+  fontFamily?: string;
   color?: string;
 };
 
@@ -32,19 +33,15 @@ function getTextLines(text: string) {
   return lines.length > 0 ? lines : [''];
 }
 
-function getTextFont(fontSize: number) {
-  return `${textFontWeight} ${fontSize}px ${textFontFamily}`;
-}
-
 function getTextTextureScale(fontSize: number) {
-  return Math.max(4, Math.min(10, Math.ceil(96 / Math.max(fontSize, 1))));
+  return Math.max(4, Math.min(8, Math.ceil(targetTextTexturePixelsPerEm / Math.max(fontSize, 1))));
 }
 
 export function clampTextFontSize(fontSize: number) {
   return THREE.MathUtils.clamp(fontSize, MIN_TEXT_FONT_SIZE, MAX_TEXT_FONT_SIZE);
 }
 
-export function measureTextObject(text: string, fontSize = DEFAULT_TEXT_FONT_SIZE) {
+export function measureTextObject(text: string, fontSize = DEFAULT_TEXT_FONT_SIZE, fontFamily = DEFAULT_TEXT_FONT_FAMILY) {
   const safeFontSize = clampTextFontSize(fontSize);
   const lines = getTextLines(text || ' ');
   const lineHeight = safeFontSize * textLineHeightRatio;
@@ -68,7 +65,7 @@ export function measureTextObject(text: string, fontSize = DEFAULT_TEXT_FONT_SIZ
     };
   }
 
-  ctx.font = getTextFont(safeFontSize);
+  ctx.font = getEditorTextCanvasFont(safeFontSize, fontFamily);
   const textWidth = Math.max(0, ...lines.map((line) => ctx.measureText(line || ' ').width));
   return {
     width: Math.max(14, Math.ceil(textWidth + paddingX * 2)),
@@ -76,7 +73,14 @@ export function measureTextObject(text: string, fontSize = DEFAULT_TEXT_FONT_SIZ
   };
 }
 
-export function createTextObjectTexture({ text, width, height, fontSize = DEFAULT_TEXT_FONT_SIZE, color = DEFAULT_TEXT_COLOR }: TextTextureOptions) {
+export function createTextObjectTexture({
+  text,
+  width,
+  height,
+  fontSize = DEFAULT_TEXT_FONT_SIZE,
+  fontFamily = DEFAULT_TEXT_FONT_FAMILY,
+  color = DEFAULT_TEXT_COLOR,
+}: TextTextureOptions) {
   const safeFontSize = clampTextFontSize(fontSize);
   const textureScale = getTextTextureScale(safeFontSize);
   const lines = getTextLines(text || ' ');
@@ -91,8 +95,9 @@ export function createTextObjectTexture({ text, width, height, fontSize = DEFAUL
     ctx.clearRect(0, 0, width, height);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+    ctx.fontKerning = 'normal';
     ctx.fillStyle = color;
-    ctx.font = getTextFont(safeFontSize);
+    ctx.font = getEditorTextCanvasFont(safeFontSize, fontFamily);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 

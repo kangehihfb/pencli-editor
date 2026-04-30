@@ -12,6 +12,7 @@
   --orange: #ffb982;
   --sidebar-width: 320px;
   font-family:
+    "Pretendard Variable",
     "Pretendard",
     "Noto Sans KR",
     -apple-system,
@@ -565,6 +566,32 @@ button {
 
 .size-group {
   gap: 2px;
+}
+
+.font-family-control {
+  display: inline-flex;
+  height: 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: #62707f;
+  background: transparent;
+}
+
+.font-family-control:hover {
+  background: #f5f7fa;
+}
+
+.font-family-control select {
+  width: 124px;
+  border: none;
+  color: #253440;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  outline: none;
 }
 
 .icon-button {
@@ -1322,7 +1349,8 @@ button {
   outline: none;
   box-shadow: none;
   font:
-    700 18px "Pretendard",
+    700 18px "Pretendard Variable",
+    "Pretendard",
     "Noto Sans KR",
     -apple-system,
     BlinkMacSystemFont,

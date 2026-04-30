@@ -658,6 +658,7 @@ export function EditorScene({
             rotation: object.rotation ?? 0,
             kind: object.kind,
             fontSize: object.fontSize,
+            fontFamily: object.fontFamily,
             text: object.text,
           })),
         strokes: strokes

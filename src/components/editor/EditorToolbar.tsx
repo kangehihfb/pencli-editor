@@ -24,16 +24,19 @@ import type {
   ReactNode,
   RefObject,
 } from "react";
+import { EDITOR_TEXT_FONT_PRESETS } from "../../lib/editorTextFonts";
 import type { Tool } from "../../types/editor";
 
 type EditorToolbarProps = {
   tool: Tool;
   readonly: boolean;
   penColor: string;
+  textFontFamily: string;
   penSize: number;
   imageInputRef: RefObject<HTMLInputElement>;
   onToolChange: (tool: Tool) => void;
   onPenColorChange: (color: string) => void;
+  onTextFontFamilyChange: (fontFamily: string) => void;
   onPenSizeChange: (size: number) => void;
   onAddText: () => void;
   onAddImage: () => void;
@@ -82,10 +85,12 @@ export function EditorToolbar({
   tool,
   readonly,
   penColor,
+  textFontFamily,
   penSize,
   imageInputRef,
   onToolChange,
   onPenColorChange,
+  onTextFontFamilyChange,
   onPenSizeChange,
   onAddText,
   onAddImage,
@@ -310,6 +315,20 @@ export function EditorToolbar({
           <span className="toolbar-separator" />
 
           <div className="tool-tab-group">
+            <label className="font-family-control" title="텍스트 폰트">
+              <Type size={16} />
+              <select
+                value={textFontFamily}
+                aria-label="텍스트 폰트"
+                onChange={(event) => onTextFontFamilyChange(event.target.value)}
+              >
+                {EDITOR_TEXT_FONT_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <ToolButton label="텍스트 추가" onClick={onAddText}>
               <Type size={18} />
             </ToolButton>

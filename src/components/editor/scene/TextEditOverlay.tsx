@@ -3,6 +3,7 @@ import { useThree } from '@react-three/fiber';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FocusEvent, KeyboardEvent } from 'react';
 import * as THREE from 'three';
+import { getEditorTextFontFamily } from '../../../lib/editorTextFonts';
 import { DEFAULT_TEXT_COLOR, DEFAULT_TEXT_FONT_SIZE, measureTextObject } from '../../../lib/objectTexture';
 import { layerToZ } from '../../../lib/sceneMath';
 import type { WebGLObject } from '../../../types/editor';
@@ -30,7 +31,8 @@ export function TextEditOverlay({ object, value, onKeyDown, onBlur }: TextEditOv
         )
       : 1;
   const fontSize = object.fontSize ?? DEFAULT_TEXT_FONT_SIZE;
-  const measured = useMemo(() => measureTextObject(draftValue, fontSize), [draftValue, fontSize]);
+  const fontFamily = getEditorTextFontFamily(object.fontFamily);
+  const measured = useMemo(() => measureTextObject(draftValue, fontSize, object.fontFamily), [draftValue, fontSize, object.fontFamily]);
   const maxOverlayWidth = Math.max(96, size.width - 24);
   const maxOverlayHeight = Math.max(fontSize * 1.55 * pixelScale, size.height - 24);
   const overlayWidth = Math.min(maxOverlayWidth, Math.max(96, object.width * pixelScale, measured.width * pixelScale));
@@ -108,6 +110,7 @@ export function TextEditOverlay({ object, value, onKeyDown, onBlur }: TextEditOv
             width: `${overlayWidth}px`,
             height: `${overlayHeight}px`,
             color: object.color ?? DEFAULT_TEXT_COLOR,
+            fontFamily,
             fontSize: `${overlayFontSize}px`,
             lineHeight: `${overlayLineHeight}px`,
           }}

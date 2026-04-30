@@ -37,10 +37,12 @@ export function EditorPage() {
         tool={editor.tool}
         readonly={editor.readonly}
         penColor={editor.activeColor}
+        textFontFamily={editor.activeTextFontFamily}
         penSize={editor.penSize}
         imageInputRef={editor.imageInputRef}
         onToolChange={handleToolChange}
         onPenColorChange={editor.applyColor}
+        onTextFontFamilyChange={editor.applyTextFontFamily}
         onPenSizeChange={editor.setPenSize}
         onAddText={editor.addText}
         onAddImage={editor.addImage}

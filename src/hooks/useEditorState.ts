@@ -28,6 +28,7 @@ import {
   rotatePoint,
 } from '../lib/sceneMath';
 import type { PageExportState } from '../lib/exportPageImage';
+import { DEFAULT_TEXT_FONT_FAMILY, preloadEditorTextFonts } from '../lib/editorTextFonts';
 import { DEFAULT_TEXT_COLOR, DEFAULT_TEXT_FONT_SIZE, clampTextFontSize, measureTextObject } from '../lib/objectTexture';
 
 const activeExamObjectId = 'object_exam_active';
@@ -141,6 +142,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
   const [tool, setTool] = useState<Tool>('answer');
   const [penColor, setPenColor] = useState('#183f3a');
   const [penSize, setPenSize] = useState(3.5);
+  const [textFontFamily, setTextFontFamily] = useState(DEFAULT_TEXT_FONT_FAMILY);
   const [readonly, setReadonly] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
   const [groupSelection, setGroupSelection] = useState<SelectionItem[]>([]);
@@ -164,6 +166,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
       ? selectedObject
       : objects.find((object) => object.kind === 'text' && groupSelection.some((item) => item.type === 'object' && item.id === object.id)) ?? null;
   const activeColor = selectedTextObject ? selectedTextObject.color ?? DEFAULT_TEXT_COLOR : penColor;
+  const activeTextFontFamily = selectedTextObject ? selectedTextObject.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY : textFontFamily;
   const activeExamObject = objects.find((object) => object.id === activeExamObjectId) ?? null;
   const drawingBounds = drawingBoundsOverride ?? (activeExamObject ? getObjectBounds(activeExamObject) : null);
   const canUndo = historyRevision >= 0 && undoHistoryRef.current.length > 0;
@@ -228,7 +231,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     if (readonly) return;
     recordHistory();
     const fontSize = DEFAULT_TEXT_FONT_SIZE;
-    const measured = measureTextObject('', fontSize);
+    const measured = measureTextObject('', fontSize, textFontFamily);
     const object: WebGLObject = {
       id: makeId('text'),
       kind: 'text',
@@ -240,6 +243,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
       color: penColor,
       text: '',
       fontSize,
+      fontFamily: textFontFamily,
     };
     setObjects((prev) => [...prev, object]);
     setSelection({ type: 'object', id: object.id });
@@ -347,6 +351,32 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     window.addEventListener('keydown', handleDeleteKey);
     return () => window.removeEventListener('keydown', handleDeleteKey);
   }, [deleteSelection, editingText, groupSelection.length, selection]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    preloadEditorTextFonts().then(() => {
+      if (cancelled) return;
+
+      setObjects((prev) =>
+        prev.map((object) => {
+          if (object.kind !== 'text') return object;
+
+          const fontSize = object.fontSize ?? DEFAULT_TEXT_FONT_SIZE;
+          const measured = measureTextObject(object.text ?? '', fontSize, object.fontFamily);
+          return {
+            ...object,
+            width: measured.width,
+            height: measured.height,
+          };
+        }),
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const beginStroke = (point: Point2D) => {
     if (readonly) return;
@@ -483,7 +513,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     }
   };
 
-  const updateObject = (id: string, patch: Partial<Pick<WebGLObject, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'layer' | 'fontSize' | 'color'>>) => {
+  const updateObject = (id: string, patch: Partial<Pick<WebGLObject, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'layer' | 'fontSize' | 'fontFamily' | 'color'>>) => {
     setObjects((prev) => prev.map((object) => (object.id === id ? { ...object, ...patch } : object)));
   };
 
@@ -499,7 +529,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
         if (object.kind === 'text') {
           const scale = patch.height / Math.max(object.height, 0.001);
           const fontSize = clampTextFontSize((object.fontSize ?? DEFAULT_TEXT_FONT_SIZE) * scale);
-          const measured = measureTextObject(object.text ?? '', fontSize);
+          const measured = measureTextObject(object.text ?? '', fontSize, object.fontFamily);
           const nextObject = {
             ...object,
             x: patch.x,
@@ -549,7 +579,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
         if (object.kind === 'text') {
           const scale = getTextScaleForResizeHandle(origin.handle, transform.scaleX, transform.scaleY);
           const fontSize = clampTextFontSize((original.fontSize ?? object.fontSize ?? DEFAULT_TEXT_FONT_SIZE) * scale);
-          const measured = measureTextObject(original.text ?? object.text ?? '', fontSize);
+          const measured = measureTextObject(original.text ?? object.text ?? '', fontSize, original.fontFamily ?? object.fontFamily);
 
           return {
             ...object,
@@ -654,7 +684,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
       return prev.map((object) => {
         if (object.id !== editingText.id) return object;
         const fontSize = object.fontSize ?? DEFAULT_TEXT_FONT_SIZE;
-        const measured = measureTextObject(nextText, fontSize);
+        const measured = measureTextObject(nextText, fontSize, object.fontFamily);
         return {
           ...object,
           text: nextText,
@@ -716,6 +746,36 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     );
   };
 
+  const applyTextFontFamily = (fontFamily: string) => {
+    setTextFontFamily(fontFamily);
+    if (readonly) return;
+
+    const targets = groupSelection.length > 0 ? groupSelection : selection ? [selection] : [];
+    const objectIds = new Set(targets.filter((item) => item.type === 'object').map((item) => item.id));
+    if (objectIds.size === 0) return;
+
+    const hasTextFontTarget = objects.some(
+      (object) => objectIds.has(object.id) && object.kind === 'text' && (object.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY) !== fontFamily,
+    );
+    if (!hasTextFontTarget) return;
+
+    recordHistory();
+    setObjects((prev) =>
+      prev.map((object) => {
+        if (!objectIds.has(object.id) || object.kind !== 'text') return object;
+
+        const fontSize = object.fontSize ?? DEFAULT_TEXT_FONT_SIZE;
+        const measured = measureTextObject(object.text ?? '', fontSize, fontFamily);
+        return {
+          ...object,
+          width: measured.width,
+          height: measured.height,
+          fontFamily,
+        };
+      }),
+    );
+  };
+
   const bringForward = () => {
     const targets = groupSelection.length > 0 ? groupSelection : selection ? [selection] : [];
     if (targets.length === 0) return;
@@ -768,6 +828,8 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     tool,
     penColor,
     activeColor,
+    textFontFamily,
+    activeTextFontFamily,
     penSize,
     readonly,
     selection,
@@ -790,6 +852,8 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     setTool,
     setPenColor,
     applyColor,
+    setTextFontFamily,
+    applyTextFontFamily,
     setPenSize,
     setReadonly,
     setSelection,
