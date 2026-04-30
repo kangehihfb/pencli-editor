@@ -33,6 +33,7 @@ export function EditorStage({
 }: EditorStageProps) {
   const frameRef = useRef<HTMLDivElement>(null);
   const [fitScale, setFitScale] = useState(1);
+  const [isViewportSyncing, setIsViewportSyncing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const activeExamIndex = examPresets.findIndex(
     (preset) => preset.id === activeExamPresetId,
@@ -62,23 +63,77 @@ export function EditorStage({
 
     const frame = frameRef.current;
     if (!frame) return;
+    let resizeSettledTimer: number | null = null;
+    let syncAnimationFrame: number | null = null;
 
-    const updateScale = () => {
+    const getNextScale = () => {
       const rect = frame.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
+      if (rect.width <= 0 || rect.height <= 0) return null;
 
-      setFitScale(
-        Math.max(
-          0.1,
-          Math.min(rect.width / PAGE_WIDTH, rect.height / PAGE_HEIGHT),
-        ),
+      return Math.max(
+        0.1,
+        Math.min(rect.width / PAGE_WIDTH, rect.height / PAGE_HEIGHT),
       );
     };
 
-    updateScale();
-    const observer = new ResizeObserver(updateScale);
+    const updateScale = (immediate = false) => {
+      const nextScale = getNextScale();
+      if (nextScale === null) return;
+
+      if (resizeSettledTimer !== null) {
+        window.clearTimeout(resizeSettledTimer);
+      }
+
+      if (immediate) {
+        setFitScale(nextScale);
+        return;
+      }
+
+      resizeSettledTimer = window.setTimeout(() => {
+        setIsViewportSyncing(true);
+        setFitScale(nextScale);
+        let syncCheckCount = 0;
+        const waitForCanvasSync = () => {
+          const shell = frame.querySelector<HTMLElement>(".stage-canvas-shell");
+          const canvas = frame.querySelector<HTMLCanvasElement>(
+            "canvas.stage-canvas, .stage-canvas canvas, canvas",
+          );
+          if (!shell || !canvas) {
+            setIsViewportSyncing(false);
+            return;
+          }
+
+          const shellRect = shell.getBoundingClientRect();
+          const canvasRect = canvas.getBoundingClientRect();
+          const isSynced =
+            Math.abs(shellRect.width - canvasRect.width) < 1 &&
+            Math.abs(shellRect.height - canvasRect.height) < 1;
+
+          if (isSynced || syncCheckCount > 30) {
+            setIsViewportSyncing(false);
+            return;
+          }
+
+          syncCheckCount += 1;
+          syncAnimationFrame = window.requestAnimationFrame(waitForCanvasSync);
+        };
+
+        syncAnimationFrame = window.requestAnimationFrame(waitForCanvasSync);
+      }, 120);
+    };
+
+    updateScale(true);
+    const observer = new ResizeObserver(() => updateScale());
     observer.observe(frame);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (resizeSettledTimer !== null) {
+        window.clearTimeout(resizeSettledTimer);
+      }
+      if (syncAnimationFrame !== null) {
+        window.cancelAnimationFrame(syncAnimationFrame);
+      }
+    };
   }, [usesFixedPage]);
 
   useEffect(() => {
@@ -187,6 +242,7 @@ export function EditorStage({
           "stage-canvas-frame",
           usesFixedPage ? "is-fixed-page" : "",
           shouldPassPointerToQuestion ? "is-question-interactive" : "",
+          isViewportSyncing ? "is-viewport-syncing" : "",
         ]
           .filter(Boolean)
           .join(" ")}

@@ -79,6 +79,22 @@ function getSceneHitRenderOrder(hit: SceneHit) {
   return hit.layer * 10 + (hit.type === 'stroke' ? 2 : 0);
 }
 
+function getCoalescedPointerEvents(event: PointerEvent) {
+  const coalescedEvents = typeof event.getCoalescedEvents === 'function' ? event.getCoalescedEvents() : [];
+  if (coalescedEvents.length === 0) return [event];
+
+  const lastEvent = coalescedEvents[coalescedEvents.length - 1];
+  if (
+    lastEvent.clientX !== event.clientX ||
+    lastEvent.clientY !== event.clientY ||
+    lastEvent.pressure !== event.pressure
+  ) {
+    return [...coalescedEvents, event];
+  }
+
+  return coalescedEvents;
+}
+
 function translateBounds(bounds: PointBounds, delta: Point2D): PointBounds {
   return {
     ...bounds,
@@ -131,7 +147,7 @@ export type EditorSceneProps = {
   onResizeStateChange: (resizeState: ResizeState) => void;
   onRotateStateChange: (rotateState: RotateState) => void;
   onBeginStroke: (point: Point2D) => void;
-  onAppendStrokePoint: (point: Point2D) => void;
+  onAppendStrokePoint: (point: Point2D | Point2D[]) => void;
   onEndStroke: () => void;
   onMoveStroke: (id: string, delta: Point2D) => void;
   onMoveObject: (id: string, point: Point2D, offset: Point2D) => void;
@@ -427,6 +443,51 @@ export function EditorScene({
   }, [gl.domElement]);
   const getBoundedPoint = useCallback((point: Point2D) => (drawingBounds ? clampPointToBounds(point, drawingBounds) : point), [drawingBounds]);
 
+  const getPointerPointsFromClientEvent = useCallback(
+    (event: PointerEvent) =>
+      getCoalescedPointerEvents(event)
+        .map((pointerEvent) => getPointerPointFromClient(pointerEvent))
+        .filter((point): point is Point2D => Boolean(point)),
+    [getPointerPointFromClient],
+  );
+
+  const appendStrokePointsFromClientEvent = useCallback(
+    (event: PointerEvent) => {
+      const rawPoints = getPointerPointsFromClientEvent(event);
+      if (rawPoints.length === 0) return true;
+
+      const boundedPoints: Point2D[] = [];
+      for (const rawPoint of rawPoints) {
+        if (drawingBounds && !isPointInBounds(rawPoint, drawingBounds)) {
+          if (boundedPoints.length > 0) {
+            onAppendStrokePoint(boundedPoints);
+          }
+          return false;
+        }
+
+        boundedPoints.push(getBoundedPoint(rawPoint));
+      }
+
+      if (boundedPoints.length > 0) {
+        onAppendStrokePoint(boundedPoints);
+      }
+      return true;
+    },
+    [drawingBounds, getBoundedPoint, getPointerPointsFromClientEvent, onAppendStrokePoint],
+  );
+
+  const finishStrokeFromClientEvent = useCallback(
+    (event?: PointerEvent) => {
+      if (!isDrawingRef.current) return;
+      if (event) {
+        appendStrokePointsFromClientEvent(event);
+      }
+      isDrawingRef.current = false;
+      onEndStroke();
+    },
+    [appendStrokePointsFromClientEvent, onEndStroke],
+  );
+
   const updateResize = useCallback(
     (currentResizeState: ResizeState, point: Point2D) => {
       if (!currentResizeState) return false;
@@ -485,10 +546,9 @@ export function EditorScene({
   );
 
   useEffect(() => {
-    const stopPointerWork = () => {
+    const stopPointerWork = (event?: PointerEvent) => {
       if (isDrawingRef.current) {
-        isDrawingRef.current = false;
-        onEndStroke();
+        finishStrokeFromClientEvent(event);
       }
       releaseActivePointer();
       onDragStateChange(null);
@@ -497,15 +557,18 @@ export function EditorScene({
       setMarqueeState(null);
     };
 
-    window.addEventListener('pointerup', stopPointerWork);
-    window.addEventListener('pointercancel', stopPointerWork);
-    window.addEventListener('blur', stopPointerWork);
+    const handlePointerEnd = (event: PointerEvent) => stopPointerWork(event);
+    const handleWindowBlur = () => stopPointerWork();
+
+    window.addEventListener('pointerup', handlePointerEnd);
+    window.addEventListener('pointercancel', handlePointerEnd);
+    window.addEventListener('blur', handleWindowBlur);
     return () => {
-      window.removeEventListener('pointerup', stopPointerWork);
-      window.removeEventListener('pointercancel', stopPointerWork);
-      window.removeEventListener('blur', stopPointerWork);
+      window.removeEventListener('pointerup', handlePointerEnd);
+      window.removeEventListener('pointercancel', handlePointerEnd);
+      window.removeEventListener('blur', handleWindowBlur);
     };
-  }, [onDragStateChange, onEndStroke, onResizeStateChange, onRotateStateChange, releaseActivePointer]);
+  }, [finishStrokeFromClientEvent, onDragStateChange, onResizeStateChange, onRotateStateChange, releaseActivePointer]);
 
   useEffect(() => {
     if ((!resizeState && !rotateState) || readonly) return;
@@ -523,6 +586,29 @@ export function EditorScene({
     window.addEventListener('pointermove', handlePointerMove);
     return () => window.removeEventListener('pointermove', handlePointerMove);
   }, [getBoundedPoint, getPointerPointFromClient, readonly, resizeState, rotateState, updateResize, updateRotate]);
+
+  useEffect(() => {
+    if (readonly || tool !== 'pen') return;
+
+    const handleDrawingPointerMove: EventListener = (event) => {
+      if (!(event instanceof PointerEvent)) return;
+      if (!isDrawingRef.current) return;
+
+      const isInsideDrawingBounds = appendStrokePointsFromClientEvent(event);
+      if (!isInsideDrawingBounds) {
+        isDrawingRef.current = false;
+        releaseActivePointer();
+        onEndStroke();
+      }
+    };
+
+    window.addEventListener('pointerrawupdate', handleDrawingPointerMove, true);
+    window.addEventListener('pointermove', handleDrawingPointerMove, true);
+    return () => {
+      window.removeEventListener('pointerrawupdate', handleDrawingPointerMove, true);
+      window.removeEventListener('pointermove', handleDrawingPointerMove, true);
+    };
+  }, [appendStrokePointsFromClientEvent, onEndStroke, readonly, releaseActivePointer, tool]);
 
   const toPoint = getPointerPointFromEvent;
 
@@ -892,20 +978,13 @@ export function EditorScene({
           }
         }}
         onPointerMove={(event) => {
-          const rawPoint = toPoint(event);
-          const point = getBoundedPoint(rawPoint);
-
           if (tool === 'pen' && isDrawingRef.current) {
-            if (drawingBounds && !isPointInBounds(rawPoint, drawingBounds)) {
-              isDrawingRef.current = false;
-              releasePointer(event);
-              onEndStroke();
-              return;
-            }
             event.stopPropagation();
-            onAppendStrokePoint(point);
             return;
           }
+
+          const rawPoint = toPoint(event);
+          const point = getBoundedPoint(rawPoint);
 
           if (resizeState && !readonly) {
             event.stopPropagation();
@@ -955,9 +1034,8 @@ export function EditorScene({
         onPointerUp={(event) => {
           if (tool === 'pen' && isDrawingRef.current) {
             event.stopPropagation();
-            isDrawingRef.current = false;
+            finishStrokeFromClientEvent(event.nativeEvent);
             releasePointer(event);
-            onEndStroke();
           }
           onDragStateChange(null);
           onResizeStateChange(null);

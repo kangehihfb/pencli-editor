@@ -110,12 +110,34 @@ function moveStrokePoints(points: Point2D[], delta: Point2D) {
   return points.map((point) => ({ x: point.x + delta.x, y: point.y + delta.y }));
 }
 
+function closeLoopStrokeIfNeeded(stroke: Stroke) {
+  if (stroke.points.length < 8) return stroke;
+
+  const firstPoint = stroke.points[0];
+  const lastPoint = stroke.points[stroke.points.length - 1];
+  const bounds = getPointBounds(stroke.points);
+  const minDimension = Math.min(bounds.width, bounds.height);
+  const minLoopDimension = Math.max(28, stroke.size * 8);
+  if (minDimension < minLoopDimension) return stroke;
+
+  const endpointGap = Math.hypot(firstPoint.x - lastPoint.x, firstPoint.y - lastPoint.y);
+  const closeThreshold = Math.max(
+    stroke.size * 2.5,
+    Math.min(Math.max(stroke.size * 7, 18), minDimension * 0.35, 32),
+  );
+  if (endpointGap > closeThreshold) return stroke;
+
+  const closedPoints = getNextStrokePoints(stroke.points, firstPoint);
+  return closedPoints === stroke.points ? stroke : { ...stroke, points: closedPoints };
+}
+
 export function useEditorState(drawingBoundsOverride: PointBounds | null = null) {
   const injectedExportStateRef = useRef<PageExportState | null>(readInjectedExportState());
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pendingExamPresetIdRef = useRef<string | null>(null);
   const undoHistoryRef = useRef<HistorySnapshot[]>([]);
   const redoHistoryRef = useRef<HistorySnapshot[]>([]);
+  const activeStrokeIdRef = useRef<string | null>(null);
   const [tool, setTool] = useState<Tool>('answer');
   const [penColor, setPenColor] = useState('#183f3a');
   const [penSize, setPenSize] = useState(3.5);
@@ -159,6 +181,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
   const resetInteractionState = useCallback(() => {
     setSelection(null);
     setGroupSelection([]);
+    activeStrokeIdRef.current = null;
     setActiveStrokeId(null);
     setDragState(null);
     setResizeState(null);
@@ -280,6 +303,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     setObjects([]);
     setSelection(null);
     setGroupSelection([]);
+    activeStrokeIdRef.current = null;
     setActiveStrokeId(null);
     setActiveExamPresetId(null);
     pendingExamPresetIdRef.current = null;
@@ -338,6 +362,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     setStrokes((prev) => [...prev, stroke]);
     setSelection(null);
     setGroupSelection([]);
+    activeStrokeIdRef.current = stroke.id;
     setActiveStrokeId(stroke.id);
     setEditingText(null);
   };
@@ -390,12 +415,16 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     }
   }, []);
 
-  const appendStrokePoint = (point: Point2D) => {
-    if (!activeStrokeId) return;
+  const appendStrokePoint = (pointOrPoints: Point2D | Point2D[]) => {
+    const targetStrokeId = activeStrokeIdRef.current;
+    if (!targetStrokeId) return;
+    const pointsToAppend = Array.isArray(pointOrPoints) ? pointOrPoints : [pointOrPoints];
+    if (pointsToAppend.length === 0) return;
+
     setStrokes((prev) =>
       prev.map((stroke) => {
-        if (stroke.id !== activeStrokeId) return stroke;
-        const nextPoints = getNextStrokePoints(stroke.points, point);
+        if (stroke.id !== targetStrokeId) return stroke;
+        const nextPoints = pointsToAppend.reduce(getNextStrokePoints, stroke.points);
         if (nextPoints === stroke.points) return stroke;
         return { ...stroke, points: nextPoints };
       }),
@@ -725,6 +754,15 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     setZoomCommand({ id: Date.now(), factor });
   };
 
+  const endStroke = () => {
+    const targetStrokeId = activeStrokeIdRef.current;
+    if (targetStrokeId) {
+      setStrokes((prev) => prev.map((stroke) => (stroke.id === targetStrokeId ? closeLoopStrokeIfNeeded(stroke) : stroke)));
+    }
+    activeStrokeIdRef.current = null;
+    setActiveStrokeId(null);
+  };
+
   return {
     imageInputRef,
     tool,
@@ -768,7 +806,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     redo,
     beginStroke,
     appendStrokePoint,
-    endStroke: () => setActiveStrokeId(null),
+    endStroke,
     moveStroke,
     moveObject,
     moveGroup,

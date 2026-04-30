@@ -17,8 +17,8 @@ export const makeId = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
 export const layerToZ = (layer: number) => layer * 0.02;
 const resizeHandles: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
-const strokePointMinDistance = 0.35;
-const strokePointMaxSpacing = 1.2;
+const strokePointMinDistance = 0.18;
+const strokePointMaxSpacing = 0.85;
 
 export function getEditorPointerPoint(event: ThreeEvent<PointerEvent>): Point2D {
   const point = new THREE.Vector3();

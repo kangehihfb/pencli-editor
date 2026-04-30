@@ -862,6 +862,10 @@ button {
   pointer-events: auto;
 }
 
+.stage-canvas-frame.is-viewport-syncing .stage-ink-layer {
+  opacity: 0;
+}
+
 .stage-object-preview-text {
   display: flex;
   width: 100%;

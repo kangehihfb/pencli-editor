@@ -138,10 +138,7 @@ function createStrokeRibbonGeometry(points: Point2D[], radius: number, jointSegm
   return geometry;
 }
 
-function createRoundedStrokeGeometry(points: Point2D[], radius: number) {
-  const centerPoints = getPerfectFreehandCenterPoints(points, radius);
-  if (!centerPoints) return null;
-
+function createRoundedStrokeGeometryFromCenterPoints(centerPoints: Point2D[], radius: number) {
   const path = centerPoints.map((point) => ({
     X: Math.round(point.x * clipperScale),
     Y: Math.round(point.y * clipperScale),
@@ -189,13 +186,18 @@ export function StrokeMesh({
   );
   const geometry = useMemo(() => {
     if (localPoints.length < 2) return null;
+    const centerPoints = getPerfectFreehandCenterPoints(localPoints, stroke.size);
+    if (!centerPoints) return null;
+
     const pickerRadius = Math.max(stroke.size * 1.45, stroke.size + 1.8);
-    const visual = createRoundedStrokeGeometry(localPoints, stroke.size);
+    const visual = createRoundedStrokeGeometryFromCenterPoints(centerPoints, stroke.size);
     if (!visual) return null;
+    const continuity = createStrokeRibbonGeometry(centerPoints, Math.max(stroke.size * 0.62, stroke.size - 1.4), 5);
 
     return {
       visual,
-      picker: hitTestEnabled ? createRoundedStrokeGeometry(localPoints, pickerRadius) : null,
+      continuity,
+      picker: hitTestEnabled ? createRoundedStrokeGeometryFromCenterPoints(centerPoints, pickerRadius) : null,
     };
   }, [activelyDrawing, hitTestEnabled, localPoints, stroke.size]);
 
@@ -220,6 +222,16 @@ export function StrokeMesh({
           ) : null}
           {renderVisual ? (
             <>
+              {geometry.continuity ? (
+                <mesh
+                  name={`${strokeSceneName}:continuity`}
+                  geometry={geometry.continuity}
+                  renderOrder={stroke.layer * 10}
+                  raycast={() => null}
+                >
+                  <meshBasicMaterial color={stroke.color} transparent opacity={1} depthTest={false} depthWrite={false} side={THREE.DoubleSide} />
+                </mesh>
+              ) : null}
               <mesh
                 name={`${strokeSceneName}:visual`}
                 geometry={geometry.visual}
