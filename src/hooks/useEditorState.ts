@@ -708,8 +708,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     setEditingText({ id: object.id, value: object.text ?? '' });
   };
 
-  const updateTextEdit = (event: ChangeEvent<HTMLTextAreaElement>) => {
-    const value = event.target.value;
+  const updateTextEdit = (value: string) => {
     setEditingText((current) => (current ? { ...current, value } : current));
   };
 

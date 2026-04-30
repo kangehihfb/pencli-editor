@@ -100,6 +100,7 @@ export function EditorPage() {
         onResizeGroup={editor.resizeGroup}
         onEraseStroke={editor.eraseStroke}
         onStartTextEdit={editor.startTextEdit}
+        onUpdateTextEdit={editor.updateTextEdit}
         onTextEditKeyDown={editor.handleTextEditKeyDown}
         onCommitTextEdit={editor.commitTextEdit}
       />

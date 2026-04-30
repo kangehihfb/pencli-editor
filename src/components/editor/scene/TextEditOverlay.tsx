@@ -4,21 +4,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FocusEvent, KeyboardEvent } from 'react';
 import * as THREE from 'three';
 import { getEditorTextFontFamily } from '../../../lib/editorTextFonts';
-import { DEFAULT_TEXT_COLOR, DEFAULT_TEXT_FONT_SIZE, measureTextObject } from '../../../lib/objectTexture';
+import { DEFAULT_TEXT_FONT_SIZE, measureTextObject } from '../../../lib/objectTexture';
 import { layerToZ } from '../../../lib/sceneMath';
 import type { WebGLObject } from '../../../types/editor';
 
 type TextEditOverlayProps = {
   object: WebGLObject;
   value: string;
+  onChange: (value: string) => void;
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onBlur: (event: FocusEvent<HTMLTextAreaElement>) => void;
 };
 
-export function TextEditOverlay({ object, value, onKeyDown, onBlur }: TextEditOverlayProps) {
+export function TextEditOverlay({ object, value, onChange, onKeyDown, onBlur }: TextEditOverlayProps) {
   const { camera, size } = useThree();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const isComposingRef = useRef(false);
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const scrollPositionRef = useRef({ left: 0, top: 0 });
   const [draftValue, setDraftValue] = useState(value);
@@ -109,7 +109,8 @@ export function TextEditOverlay({ object, value, onKeyDown, onBlur }: TextEditOv
           style={{
             width: `${overlayWidth}px`,
             height: `${overlayHeight}px`,
-            color: object.color ?? DEFAULT_TEXT_COLOR,
+            color: 'transparent',
+            WebkitTextFillColor: 'transparent',
             fontFamily,
             fontSize: `${overlayFontSize}px`,
             lineHeight: `${overlayLineHeight}px`,
@@ -119,18 +120,16 @@ export function TextEditOverlay({ object, value, onKeyDown, onBlur }: TextEditOv
           spellCheck={false}
           wrap="off"
           aria-label="텍스트 입력"
-          onCompositionStart={() => {
-            isComposingRef.current = true;
-          }}
           onCompositionEnd={(event) => {
-            isComposingRef.current = false;
-            setDraftValue(event.currentTarget.value);
+            const value = event.currentTarget.value;
+            setDraftValue(value);
+            onChange(value);
             restoreScrollAfterBrowserFocus();
           }}
           onInput={(event) => {
-            const isComposingEvent = 'isComposing' in event.nativeEvent && Boolean(event.nativeEvent.isComposing);
-            if (isComposingRef.current || isComposingEvent) return;
-            setDraftValue(event.currentTarget.value);
+            const value = event.currentTarget.value;
+            setDraftValue(value);
+            onChange(value);
             restoreScrollAfterBrowserFocus();
           }}
           onKeyDown={onKeyDown}

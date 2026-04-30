@@ -160,6 +160,7 @@ export type EditorSceneProps = {
   onResizeGroup: (origin: GroupResizeOrigin, point: Point2D) => void;
   onEraseStroke: (id: string) => void;
   onStartTextEdit: (object: WebGLObject) => void;
+  onUpdateTextEdit: (value: string) => void;
   onTextEditKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onCommitTextEdit: (value?: string) => void;
   hideEditorChrome?: boolean;
@@ -201,6 +202,7 @@ export function EditorScene({
   onResizeGroup,
   onEraseStroke,
   onStartTextEdit,
+  onUpdateTextEdit,
   onTextEditKeyDown,
   onCommitTextEdit,
   hideEditorChrome = false,
@@ -1059,6 +1061,7 @@ export function EditorScene({
             selected={!hideEditorChrome && selection?.type === 'object' && selection.id === object.id}
             groupSelected={!hideEditorChrome && isSelectedItem('object', object.id)}
             editing={editingText?.id === object.id}
+            draftText={editingText?.id === object.id ? editingText.value : undefined}
             canResize={!hideEditorChrome && tool === 'select'}
             onStartTextEdit={onStartTextEdit}
             onSelect={(event) => {
@@ -1143,6 +1146,7 @@ export function EditorScene({
                 key={object.id}
                 object={object}
                 value={editingText.value}
+                onChange={onUpdateTextEdit}
                 onKeyDown={onTextEditKeyDown}
                 onBlur={(event: FocusEvent<HTMLTextAreaElement>) => onCommitTextEdit(event.currentTarget.value)}
               />
