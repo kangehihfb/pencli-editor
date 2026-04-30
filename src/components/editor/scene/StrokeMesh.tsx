@@ -150,6 +150,7 @@ function createRoundedStrokeGeometryFromCenterPoints(centerPoints: Point2D[], ra
   offset.Execute(solution, radius * clipperScale);
 
   const cleaned = ClipperLib.Clipper.CleanPolygons(solution, Math.max(1, clipperScale * 0.02));
+
   return createShapeGeometryFromPaths(cleaned) ?? createStrokeRibbonGeometry(centerPoints, radius, 8);
 }
 
