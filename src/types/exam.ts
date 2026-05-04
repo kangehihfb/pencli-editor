@@ -17,6 +17,7 @@ export type ShortAnswerSubQuestion = {
   id: string;
   type: 'shortAnswer';
   prompt?: string;
+  placeholder?: string;
   answerCount: number;
 };
 

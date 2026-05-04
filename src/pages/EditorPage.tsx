@@ -15,6 +15,8 @@ export function EditorPage() {
   const editor = useEditorState(PAGE_BOUNDS);
   const [pageZoom, setPageZoom] = useState(1);
   const [comparisonExportRequestId, setComparisonExportRequestId] = useState(0);
+  const activeReactExam =
+    reactExams.find((exam) => exam.id === editor.activeExamPresetId) ?? reactExams[0];
   const handleToolChange = (nextTool: typeof editor.tool) => {
     if (editor.editingText) {
       editor.commitTextEdit();
@@ -79,7 +81,7 @@ export function EditorPage() {
         comparisonExportRequestId={comparisonExportRequestId}
         examPresets={editor.examPresets}
         activeExamPresetId={editor.activeExamPresetId}
-        questionContent={<ExamPresentation exam={reactExams[0]} />}
+        questionContent={<ExamPresentation exam={activeReactExam} />}
         onSelectExamPreset={editor.selectExamPreset}
         onSelectionChange={editor.setSelection}
         onGroupSelectionChange={editor.setGroupSelection}

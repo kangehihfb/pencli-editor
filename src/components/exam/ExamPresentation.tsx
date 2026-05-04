@@ -33,7 +33,15 @@ export function ExamPresentation({ exam }: ExamPresentationProps) {
               <strong className="react-exam-question-number">{exam.questionNumber}</strong>
             ) : null}
           </div>
-     
+
+          {exam.difficultyLabel ? (
+            <div className="react-exam-header-actions">
+              <span className="react-exam-difficulty">{exam.difficultyLabel}</span>
+              <span className="react-exam-bookmark" aria-hidden="true">
+                <span />
+              </span>
+            </div>
+          ) : null}
         </div>
       </header>
 

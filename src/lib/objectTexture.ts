@@ -37,6 +37,11 @@ function getTextTextureScale(fontSize: number) {
   return Math.max(4, Math.min(8, Math.ceil(targetTextTexturePixelsPerEm / Math.max(fontSize, 1))));
 }
 
+function getDevicePixelRatioScale() {
+  if (typeof window === 'undefined') return 1;
+  return THREE.MathUtils.clamp(window.devicePixelRatio || 1, 1, 2);
+}
+
 export function clampTextFontSize(fontSize: number) {
   return THREE.MathUtils.clamp(fontSize, MIN_TEXT_FONT_SIZE, MAX_TEXT_FONT_SIZE);
 }
@@ -82,7 +87,7 @@ export function createTextObjectTexture({
   color = DEFAULT_TEXT_COLOR,
 }: TextTextureOptions) {
   const safeFontSize = clampTextFontSize(fontSize);
-  const textureScale = getTextTextureScale(safeFontSize);
+  const textureScale = getTextTextureScale(safeFontSize) * getDevicePixelRatioScale();
   const lines = getTextLines(text || ' ');
   const lineHeight = safeFontSize * textLineHeightRatio;
   const canvas = document.createElement('canvas');

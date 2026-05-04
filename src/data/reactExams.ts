@@ -24,4 +24,26 @@ export const reactExams: ReactExam[] = [
       },
     ],
   },
+  {
+    id: 'exam_2',
+    title: '문자 배열',
+    questionNumber: 'Q1_2005학년도 6월 평가원 나형 30번',
+    categoryLabel: '수학 문제',
+    difficultyLabel: '발전',
+    required: true,
+    body: [
+      {
+        type: 'text',
+        text: '7개의 문자 𝑎, 𝑎, 𝑏, 𝑏, 𝑐, 𝑑, 𝑒 를 일렬로 나열할 때,\n𝑎 끼리 또는 𝑏 끼리 이웃하게 되는 모든 경우의 수를\n구하시오. [4점]',
+      },
+    ],
+    subQuestions: [
+      {
+        id: 'exam_2_short_1',
+        type: 'shortAnswer',
+        answerCount: 1,
+        placeholder: '내용 입력...',
+      },
+    ],
+  },
 ];

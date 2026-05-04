@@ -165,6 +165,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     selectedObject?.kind === 'text'
       ? selectedObject
       : objects.find((object) => object.kind === 'text' && groupSelection.some((item) => item.type === 'object' && item.id === object.id)) ?? null;
+
   const activeColor = selectedTextObject ? selectedTextObject.color ?? DEFAULT_TEXT_COLOR : penColor;
   const activeTextFontFamily = selectedTextObject ? selectedTextObject.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY : textFontFamily;
   const activeExamObject = objects.find((object) => object.id === activeExamObjectId) ?? null;
@@ -245,6 +246,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
       fontSize,
       fontFamily: textFontFamily,
     };
+
     setObjects((prev) => [...prev, object]);
     setSelection({ type: 'object', id: object.id });
     setGroupSelection([{ type: 'object', id: object.id }]);

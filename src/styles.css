@@ -172,6 +172,10 @@ button {
   margin: 0;
 }
 
+.react-exam-body p {
+  white-space: pre-line;
+}
+
 .react-exam-body {
   display: grid;
   gap: 12px;
@@ -225,6 +229,35 @@ button {
   justify-content: space-between;
   gap: 28px;
   margin-bottom: 64px;
+}
+
+.exam-short-answer-list.has-submit-action {
+  margin-bottom: 12px;
+}
+
+.exam-short-answer-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 64px;
+}
+
+.exam-submit-answer-button {
+  min-width: 96px;
+  height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  background: #20242d;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.exam-submit-answer-button:disabled {
+  color: #697184;
+  background: #e6ebf1;
+  cursor: default;
 }
 
 .exam-answer-input {
