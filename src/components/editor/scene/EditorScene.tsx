@@ -166,6 +166,7 @@ export type EditorSceneProps = {
   hideEditorChrome?: boolean;
   renderSceneBackground?: boolean;
   renderVisualLayer?: boolean;
+  renderTextVisualLayer?: boolean;
   viewportLocked?: boolean;
 };
 
@@ -208,6 +209,7 @@ export function EditorScene({
   hideEditorChrome = false,
   renderSceneBackground = true,
   renderVisualLayer = true,
+  renderTextVisualLayer = true,
   viewportLocked = false,
 }: EditorSceneProps) {
   const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null);
@@ -1058,6 +1060,7 @@ export function EditorScene({
             key={object.id}
             object={object}
             renderVisual={renderVisualLayer}
+            renderTextVisual={renderTextVisualLayer}
             selected={!hideEditorChrome && selection?.type === 'object' && selection.id === object.id}
             groupSelected={!hideEditorChrome && isSelectedItem('object', object.id)}
             editing={editingText?.id === object.id}

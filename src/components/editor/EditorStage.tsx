@@ -1,8 +1,9 @@
 import { OrthographicCamera } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { ExamPreset } from "../../data/examPresets";
+import { getEditorTextFontFamily } from "../../lib/editorTextFonts";
 import { exportPageImage } from "../../lib/exportPageImage";
 import { downloadClientPageExportComparison } from "../../lib/pageExportMethods";
 import { PAGE_HEIGHT, PAGE_WIDTH } from "../../lib/pageGeometry";
@@ -10,6 +11,8 @@ import { PerformanceMonitor } from "./PerformanceMonitor";
 import { EditorScene } from "./scene/EditorScene";
 import type { EditorSceneProps } from "./scene/EditorScene";
 import { ExamLibraryOverlay } from "./ExamLibraryOverlay";
+
+const useDomTextLayerPoc = false;
 
 type EditorStageProps = EditorSceneProps & {
   examPresets: ExamPreset[];
@@ -20,6 +23,51 @@ type EditorStageProps = EditorSceneProps & {
   exportRequestId?: number;
   comparisonExportRequestId?: number;
 };
+
+function DomTextLayer({
+  objects,
+  editingText,
+}: {
+  objects: EditorSceneProps["objects"];
+  editingText: EditorSceneProps["editingText"];
+}) {
+  const textObjects = objects.filter((object) => object.kind === "text");
+  if (textObjects.length === 0) return null;
+
+  return (
+    <div className="stage-dom-text-layer" aria-hidden="true">
+      <div className="stage-dom-text-page">
+        {textObjects.map((object) => {
+          const fontSize = object.fontSize ?? 32;
+          const width = Math.max(1, object.width);
+          const height = Math.max(fontSize * 1.22, object.height);
+          const textValue = editingText?.id === object.id ? editingText.value : object.text;
+
+          return (
+            <div
+              key={object.id}
+              className="stage-dom-text-object"
+              style={{
+                left: `${object.x}px`,
+                top: `${object.y}px`,
+                width: `${width}px`,
+                minHeight: `${height}px`,
+                color: object.color,
+                fontFamily: getEditorTextFontFamily(object.fontFamily),
+                fontSize: `${fontSize}px`,
+                lineHeight: 1.22,
+                transform: `translate(-50%, -50%) rotate(${object.rotation ?? 0}deg)`,
+                zIndex: object.layer,
+              }}
+            >
+              {textValue || " "}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 type PencilReportPointerEvent = {
   type: string;
@@ -904,15 +952,21 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
                 />
                 {!questionContent ? <color attach="background" args={["#ffffff"]} /> : null}
                 <ambientLight intensity={1.4} />
-                <EditorScene
-                  {...sceneProps}
-                  readonly={isInkPassive || sceneProps.readonly}
-                  hideEditorChrome={isInkPassive || isExporting}
-                  renderSceneBackground={!questionContent}
-                  viewportLocked={usesFixedPage}
-                />
+                <Suspense fallback={null}>
+                  <EditorScene
+                    {...sceneProps}
+                    readonly={isInkPassive || sceneProps.readonly}
+                    hideEditorChrome={isInkPassive || isExporting}
+                    renderSceneBackground={!questionContent}
+                    renderTextVisualLayer={!useDomTextLayerPoc}
+                    viewportLocked={usesFixedPage}
+                  />
+                </Suspense>
               </Canvas>
             </div>
+            {useDomTextLayerPoc ? (
+              <DomTextLayer objects={sceneProps.objects} editingText={sceneProps.editingText} />
+            ) : null}
             {shouldCaptureInkInput ? (
               <div ref={inputCaptureRef} className="stage-input-capture" aria-hidden="true" />
             ) : null}

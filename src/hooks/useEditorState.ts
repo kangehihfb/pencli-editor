@@ -168,6 +168,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
 
   const activeColor = selectedTextObject ? selectedTextObject.color ?? DEFAULT_TEXT_COLOR : penColor;
   const activeTextFontFamily = selectedTextObject ? selectedTextObject.fontFamily ?? DEFAULT_TEXT_FONT_FAMILY : textFontFamily;
+  const activeTextFontSize = selectedTextObject ? selectedTextObject.fontSize ?? DEFAULT_TEXT_FONT_SIZE : DEFAULT_TEXT_FONT_SIZE;
   const activeExamObject = objects.find((object) => object.id === activeExamObjectId) ?? null;
   const drawingBounds = drawingBoundsOverride ?? (activeExamObject ? getObjectBounds(activeExamObject) : null);
   const canUndo = historyRevision >= 0 && undoHistoryRef.current.length > 0;
@@ -777,6 +778,35 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     );
   };
 
+  const applyTextFontSize = (fontSize: number) => {
+    const safeFontSize = clampTextFontSize(fontSize);
+    if (readonly) return;
+
+    const targets = groupSelection.length > 0 ? groupSelection : selection ? [selection] : [];
+    const objectIds = new Set(targets.filter((item) => item.type === 'object').map((item) => item.id));
+    if (objectIds.size === 0) return;
+
+    const hasTextSizeTarget = objects.some(
+      (object) => objectIds.has(object.id) && object.kind === 'text' && (object.fontSize ?? DEFAULT_TEXT_FONT_SIZE) !== safeFontSize,
+    );
+    if (!hasTextSizeTarget) return;
+
+    recordHistory();
+    setObjects((prev) =>
+      prev.map((object) => {
+        if (!objectIds.has(object.id) || object.kind !== 'text') return object;
+
+        const measured = measureTextObject(object.text ?? '', safeFontSize, object.fontFamily);
+        return {
+          ...object,
+          width: measured.width,
+          height: measured.height,
+          fontSize: safeFontSize,
+        };
+      }),
+    );
+  };
+
   const bringForward = () => {
     const targets = groupSelection.length > 0 ? groupSelection : selection ? [selection] : [];
     if (targets.length === 0) return;
@@ -831,6 +861,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     activeColor,
     textFontFamily,
     activeTextFontFamily,
+    activeTextFontSize,
     penSize,
     readonly,
     selection,
@@ -855,6 +886,7 @@ export function useEditorState(drawingBoundsOverride: PointBounds | null = null)
     applyColor,
     setTextFontFamily,
     applyTextFontFamily,
+    applyTextFontSize,
     setPenSize,
     setReadonly,
     setSelection,

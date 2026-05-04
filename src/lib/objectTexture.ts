@@ -2,12 +2,17 @@ import * as THREE from 'three';
 import { DEFAULT_TEXT_FONT_FAMILY, getEditorTextCanvasFont } from './editorTextFonts';
 
 export const DEFAULT_TEXT_FONT_SIZE = 32;
-export const MIN_TEXT_FONT_SIZE = 10;
+export const MIN_TEXT_FONT_SIZE = 7;
 export const MAX_TEXT_FONT_SIZE = 180;
 export const DEFAULT_TEXT_COLOR = '#1f2a44';
 
 const textLineHeightRatio = 1.22;
 const targetTextTexturePixelsPerEm = 160;
+const minTextTextureScale = 0.5;
+const maxTextTextureScale = 40;
+const screenTextTextureOversample = 2.5;
+const minRasterTextPixelsPerEm = 192;
+const maxTextTexturePixels = 8_000_000;
 
 function configureTexture(texture: THREE.Texture) {
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -26,6 +31,7 @@ type TextTextureOptions = {
   fontSize?: number;
   fontFamily?: string;
   color?: string;
+  pixelsPerWorldUnit?: number;
 };
 
 function getTextLines(text: string) {
@@ -33,13 +39,29 @@ function getTextLines(text: string) {
   return lines.length > 0 ? lines : [''];
 }
 
-function getTextTextureScale(fontSize: number) {
-  return Math.max(4, Math.min(8, Math.ceil(targetTextTexturePixelsPerEm / Math.max(fontSize, 1))));
-}
+function getTextTextureScale(width: number, height: number, fontSize: number, pixelsPerWorldUnit?: number) {
+  const fallbackScale = Math.max(4, Math.min(8, Math.ceil(targetTextTexturePixelsPerEm / Math.max(fontSize, 1))));
+  const minReadableScale = minRasterTextPixelsPerEm / Math.max(fontSize, 1);
+  const screenScale =
+    Number.isFinite(pixelsPerWorldUnit) && pixelsPerWorldUnit && pixelsPerWorldUnit > 0
+      ? pixelsPerWorldUnit * screenTextTextureOversample
+      : 0;
+  const maxScaleForPixelBudget = Math.sqrt(maxTextTexturePixels / Math.max(width * height, 1));
+  const preferredScale = Math.max(fallbackScale, minReadableScale, screenScale);
 
-function getDevicePixelRatioScale() {
-  if (typeof window === 'undefined') return 1;
-  return THREE.MathUtils.clamp(window.devicePixelRatio || 1, 1, 2);
+  if (Number.isFinite(pixelsPerWorldUnit) && pixelsPerWorldUnit && pixelsPerWorldUnit > 0) {
+    return THREE.MathUtils.clamp(
+      preferredScale,
+      minTextTextureScale,
+      Math.max(minTextTextureScale, Math.min(maxTextTextureScale, maxScaleForPixelBudget)),
+    );
+  }
+
+  return THREE.MathUtils.clamp(
+    preferredScale,
+    minTextTextureScale,
+    Math.max(minTextTextureScale, Math.min(maxTextTextureScale, maxScaleForPixelBudget)),
+  );
 }
 
 export function clampTextFontSize(fontSize: number) {
@@ -85,9 +107,10 @@ export function createTextObjectTexture({
   fontSize = DEFAULT_TEXT_FONT_SIZE,
   fontFamily = DEFAULT_TEXT_FONT_FAMILY,
   color = DEFAULT_TEXT_COLOR,
+  pixelsPerWorldUnit,
 }: TextTextureOptions) {
   const safeFontSize = clampTextFontSize(fontSize);
-  const textureScale = getTextTextureScale(safeFontSize) * getDevicePixelRatioScale();
+  const textureScale = getTextTextureScale(width, height, safeFontSize, pixelsPerWorldUnit);
   const lines = getTextLines(text || ' ');
   const lineHeight = safeFontSize * textLineHeightRatio;
   const canvas = document.createElement('canvas');
@@ -101,6 +124,7 @@ export function createTextObjectTexture({
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.fontKerning = 'normal';
+    ctx.textRendering = 'optimizeLegibility';
     ctx.fillStyle = color;
     ctx.font = getEditorTextCanvasFont(safeFontSize, fontFamily);
     ctx.textAlign = 'center';
@@ -116,7 +140,7 @@ export function createTextObjectTexture({
   const texture = new THREE.CanvasTexture(canvas);
   configureTexture(texture);
   texture.generateMipmaps = true;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.minFilter = THREE.LinearMipmapNearestFilter;
   texture.magFilter = THREE.LinearFilter;
   texture.anisotropy = 8;
   texture.needsUpdate = true;

@@ -10,6 +10,7 @@ import {
   MousePointer2,
   PenLine,
   Redo2,
+  Scaling,
   Trash2,
   Type,
   Undo2,
@@ -32,11 +33,13 @@ type EditorToolbarProps = {
   readonly: boolean;
   penColor: string;
   textFontFamily: string;
+  textFontSize: number;
   penSize: number;
   imageInputRef: RefObject<HTMLInputElement>;
   onToolChange: (tool: Tool) => void;
   onPenColorChange: (color: string) => void;
   onTextFontFamilyChange: (fontFamily: string) => void;
+  onTextFontSizeChange: (fontSize: number) => void;
   onPenSizeChange: (size: number) => void;
   onAddText: () => void;
   onAddImage: () => void;
@@ -86,11 +89,13 @@ export function EditorToolbar({
   readonly,
   penColor,
   textFontFamily,
+  textFontSize,
   penSize,
   imageInputRef,
   onToolChange,
   onPenColorChange,
   onTextFontFamilyChange,
+  onTextFontSizeChange,
   onPenSizeChange,
   onAddText,
   onAddImage,
@@ -328,6 +333,18 @@ export function EditorToolbar({
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="font-size-control" title="텍스트 크기">
+              <Scaling size={16} />
+              <input
+                type="number"
+                min={7}
+                max={180}
+                step={1}
+                value={Math.round(textFontSize)}
+                aria-label="텍스트 크기"
+                onChange={(event) => onTextFontSizeChange(Number(event.target.value))}
+              />
             </label>
             <ToolButton label="텍스트 추가" onClick={onAddText}>
               <Type size={18} />

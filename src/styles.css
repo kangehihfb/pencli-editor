@@ -601,7 +601,8 @@ button {
   gap: 2px;
 }
 
-.font-family-control {
+.font-family-control,
+.font-size-control {
   display: inline-flex;
   height: 34px;
   align-items: center;
@@ -612,11 +613,13 @@ button {
   background: transparent;
 }
 
-.font-family-control:hover {
+.font-family-control:hover,
+.font-size-control:hover {
   background: #f5f7fa;
 }
 
-.font-family-control select {
+.font-family-control select,
+.font-size-control input {
   width: 124px;
   border: none;
   color: #253440;
@@ -625,6 +628,11 @@ button {
   font-size: 12px;
   font-weight: 700;
   outline: none;
+}
+
+.font-size-control input {
+  width: 46px;
+  text-align: center;
 }
 
 .icon-button {
@@ -922,10 +930,45 @@ button {
   pointer-events: auto;
 }
 
+.stage-dom-text-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.stage-dom-text-page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--stage-page-width);
+  height: var(--stage-page-height);
+  zoom: var(--stage-page-scale);
+  transform: none;
+  transform-origin: top left;
+}
+
+.stage-dom-text-object {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  white-space: pre;
+  text-align: center;
+  overflow: visible;
+  font-weight: 600;
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  transform-origin: center center;
+}
+
 .stage-input-capture {
   position: absolute;
   inset: 0;
-  z-index: 6;
+  z-index: 7;
   cursor: crosshair;
   pointer-events: auto;
   touch-action: none;

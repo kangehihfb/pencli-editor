@@ -1,11 +1,17 @@
-export const EDITOR_TEXT_FONT_WEIGHT = 700;
+export const EDITOR_TEXT_FONT_WEIGHT = 600;
 export const EDITOR_TEXT_FONT_LOAD_SAMPLE = '안녕하세요 ABCD 1234';
+export const EDITOR_TEXT_TROIKA_PRELOAD_CHARACTERS =
+  '안녕하세요 가나다라마바사아자차카타파하 0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .,!?()[]+-=*/_';
+export const DEFAULT_TEXT_TROIKA_FONT_URL = '/fonts/Pretendard-SemiBold.woff';
+export const SYSTEM_SANS_TEXT_TROIKA_FONT_URL = '/fonts/AppleGothic.ttf';
+export const SERIF_KR_TEXT_TROIKA_FONT_URL = '/fonts/AppleMyungjo.ttf';
 
 export type EditorTextFontPreset = {
   id: string;
   label: string;
   family: string;
   loadFamily?: string;
+  troikaFontUrl?: string;
 };
 
 export const EDITOR_TEXT_FONT_PRESETS: EditorTextFontPreset[] = [
@@ -15,18 +21,22 @@ export const EDITOR_TEXT_FONT_PRESETS: EditorTextFontPreset[] = [
     family:
       '"Pretendard Variable", "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     loadFamily: 'Pretendard Variable',
+    troikaFontUrl: DEFAULT_TEXT_TROIKA_FONT_URL,
   },
   {
     id: 'system-sans',
     label: 'System Sans',
     family:
       '-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", sans-serif',
+    loadFamily: 'AppleGothic',
+    troikaFontUrl: SYSTEM_SANS_TEXT_TROIKA_FONT_URL,
   },
   {
     id: 'serif-kr',
     label: 'Serif KR',
     family: '"Noto Serif KR", "AppleMyungjo", "Batang", "Times New Roman", serif',
-    loadFamily: 'Noto Serif KR',
+    loadFamily: 'AppleMyungjo',
+    troikaFontUrl: SERIF_KR_TEXT_TROIKA_FONT_URL,
   },
 ];
 
@@ -40,8 +50,12 @@ export function getEditorTextFontFamily(fontFamily = DEFAULT_TEXT_FONT_FAMILY) {
   return getEditorTextFontPreset(fontFamily).family;
 }
 
-export function getEditorTextCanvasFont(fontSize: number, fontFamily = DEFAULT_TEXT_FONT_FAMILY) {
-  return `${EDITOR_TEXT_FONT_WEIGHT} ${fontSize}px ${getEditorTextFontFamily(fontFamily)}`;
+export function getEditorTextCanvasFont(fontSize: number, fontFamily = DEFAULT_TEXT_FONT_FAMILY, fontWeight = EDITOR_TEXT_FONT_WEIGHT) {
+  return `${fontWeight} ${fontSize}px ${getEditorTextFontFamily(fontFamily)}`;
+}
+
+export function getEditorTextTroikaFontUrl(fontFamily = DEFAULT_TEXT_FONT_FAMILY) {
+  return getEditorTextFontPreset(fontFamily).troikaFontUrl ?? DEFAULT_TEXT_TROIKA_FONT_URL;
 }
 
 function getFontLoadFamilyValue(fontFamily: string) {
