@@ -1,5 +1,7 @@
-import { EditorPage } from './pages/EditorPage';
+import EditorPage from "./pages/editor-page";
 
-export function App() {
+function App(): JSX.Element {
   return <EditorPage />;
 }
+
+export default App;

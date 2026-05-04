@@ -1,12 +1,20 @@
-import { Leva } from 'leva';
-import type { Stroke, WebGLObject } from '../../../types/editor';
-import { SelectionDebugControls } from './SelectionDebugControls';
+import { Leva } from "leva";
+import type { Stroke, WebGLObject } from "../../../types/editor";
+import { SelectionDebugControls } from "./SelectionDebugControls";
 
-type EditorDebugPanelProps = {
-  selectedObject: WebGLObject | null;
-  selectedStroke: Stroke | null;
-  onUpdateObject: (id: string, patch: Partial<Pick<WebGLObject, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'layer'>>) => void;
-  onUpdateStroke: (id: string, patch: Partial<Pick<Stroke, 'layer' | 'size'>>) => void;
+type EditorDebugPanelProperties = {
+  selectedObject: WebGLObject | undefined;
+  selectedStroke: Stroke | undefined;
+  onUpdateObject: (
+    id: string,
+    patch: Partial<
+      Pick<WebGLObject, "x" | "y" | "width" | "height" | "rotation" | "layer">
+    >,
+  ) => void;
+  onUpdateStroke: (
+    id: string,
+    patch: Partial<Pick<Stroke, "layer" | "size">>,
+  ) => void;
 };
 
 export function EditorDebugPanel({
@@ -14,7 +22,7 @@ export function EditorDebugPanel({
   selectedStroke,
   onUpdateObject,
   onUpdateStroke,
-}: EditorDebugPanelProps) {
+}: EditorDebugPanelProperties) {
   return (
     <>
       <SelectionDebugControls

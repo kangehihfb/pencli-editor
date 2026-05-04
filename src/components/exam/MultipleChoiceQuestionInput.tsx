@@ -1,10 +1,10 @@
-import type { MultipleChoiceSubQuestion } from '../../types/exam';
+import type { MultipleChoiceSubQuestion } from "../../types/exam";
 
-const circledNumbers = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];
+const circledNumbers = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"];
 
-type MultipleChoiceQuestionInputProps = {
+type MultipleChoiceQuestionInputProperties = {
   subQuestion: MultipleChoiceSubQuestion;
-  selectedIndex: number | null;
+  selectedIndex: number | undefined;
   onSelect: (index: number) => void;
   submitted?: boolean;
 };
@@ -14,7 +14,7 @@ export function MultipleChoiceQuestionInput({
   selectedIndex,
   onSelect,
   submitted = false,
-}: MultipleChoiceQuestionInputProps) {
+}: MultipleChoiceQuestionInputProperties) {
   const handlePointerSelect = (
     event: React.PointerEvent<HTMLButtonElement>,
     index: number,
@@ -27,7 +27,7 @@ export function MultipleChoiceQuestionInput({
     <section className="exam-sub-question exam-multiple-choice-question">
       {subQuestion.prompt ? (
         <p className="exam-sub-question-label">{subQuestion.prompt}</p>
-      ) : null}
+      ) : undefined}
 
       <div className="exam-choice-list">
         {subQuestion.choices.map((choice, index) => (
@@ -35,8 +35,8 @@ export function MultipleChoiceQuestionInput({
             key={choice}
             className={
               selectedIndex === index
-                ? 'exam-choice-button active'
-                : 'exam-choice-button'
+                ? "exam-choice-button active"
+                : "exam-choice-button"
             }
             type="button"
             onPointerDown={(event) => handlePointerSelect(event, index)}
@@ -55,8 +55,8 @@ export function MultipleChoiceQuestionInput({
               key={index}
               className={
                 selectedIndex === index
-                  ? 'exam-answer-review-row active'
-                  : 'exam-answer-review-row'
+                  ? "exam-answer-review-row active"
+                  : "exam-answer-review-row"
               }
               type="button"
               onPointerDown={(event) => handlePointerSelect(event, index)}
@@ -67,11 +67,11 @@ export function MultipleChoiceQuestionInput({
               </span>
               {selectedIndex === index ? (
                 <strong className="exam-answer-review-label">내 답변</strong>
-              ) : null}
+              ) : undefined}
             </button>
           ))}
         </div>
-      ) : null}
+      ) : undefined}
     </section>
   );
 }

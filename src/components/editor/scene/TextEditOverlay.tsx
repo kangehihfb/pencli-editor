@@ -1,14 +1,17 @@
-import { Html } from '@react-three/drei';
-import { useThree } from '@react-three/fiber';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { FocusEvent, KeyboardEvent } from 'react';
-import * as THREE from 'three';
-import { getEditorTextFontFamily } from '../../../lib/editorTextFonts';
-import { DEFAULT_TEXT_FONT_SIZE, measureTextObject } from '../../../lib/objectTexture';
-import { layerToZ } from '../../../lib/sceneMath';
-import type { WebGLObject } from '../../../types/editor';
+import { Html } from "@react-three/drei";
+import { useThree } from "@react-three/fiber";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { FocusEvent, KeyboardEvent } from "react";
+import * as THREE from "three";
+import { getEditorTextFontFamily } from "../../../lib/editorTextFonts";
+import {
+  DEFAULT_TEXT_FONT_SIZE,
+  measureTextObject,
+} from "../../../lib/objectTexture";
+import { layerToZ } from "../../../lib/sceneMath";
+import type { WebGLObject } from "../../../types/editor";
 
-type TextEditOverlayProps = {
+type TextEditOverlayProperties = {
   object: WebGLObject;
   value: string;
   onChange: (value: string) => void;
@@ -16,51 +19,76 @@ type TextEditOverlayProps = {
   onBlur: (event: FocusEvent<HTMLTextAreaElement>) => void;
 };
 
-export function TextEditOverlay({ object, value, onChange, onKeyDown, onBlur }: TextEditOverlayProps) {
+export function TextEditOverlay({
+  object,
+  value,
+  onChange,
+  onKeyDown,
+  onBlur,
+}: TextEditOverlayProperties) {
   const { camera, size } = useThree();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const scrollContainerRef = useRef<HTMLElement | null>(null);
-  const scrollPositionRef = useRef({ left: 0, top: 0 });
+  const textareaReference = useRef<HTMLTextAreaElement>(undefined);
+  const scrollContainerReference = useRef<HTMLElement | undefined>(undefined);
+  const scrollPositionReference = useRef({ left: 0, top: 0 });
   const [draftValue, setDraftValue] = useState(value);
   const overlayName = `text-edit-overlay:${object.id}`;
   const pixelScale =
     camera instanceof THREE.OrthographicCamera
       ? Math.min(
-          size.width / (Math.abs(camera.right - camera.left) / Math.max(camera.zoom, 0.001)),
-          size.height / (Math.abs(camera.top - camera.bottom) / Math.max(camera.zoom, 0.001)),
+          size.width /
+            (Math.abs(camera.right - camera.left) /
+              Math.max(camera.zoom, 0.001)),
+          size.height /
+            (Math.abs(camera.top - camera.bottom) /
+              Math.max(camera.zoom, 0.001)),
         )
       : 1;
   const fontSize = object.fontSize ?? DEFAULT_TEXT_FONT_SIZE;
   const fontFamily = getEditorTextFontFamily(object.fontFamily);
-  const measured = useMemo(() => measureTextObject(draftValue, fontSize, object.fontFamily), [draftValue, fontSize, object.fontFamily]);
+  const measured = useMemo(
+    () => measureTextObject(draftValue, fontSize, object.fontFamily),
+    [draftValue, fontSize, object.fontFamily],
+  );
   const maxOverlayWidth = Math.max(96, size.width - 24);
-  const maxOverlayHeight = Math.max(fontSize * 1.55 * pixelScale, size.height - 24);
-  const overlayWidth = Math.min(maxOverlayWidth, Math.max(96, object.width * pixelScale, measured.width * pixelScale));
+  const maxOverlayHeight = Math.max(
+    fontSize * 1.55 * pixelScale,
+    size.height - 24,
+  );
+  const overlayWidth = Math.min(
+    maxOverlayWidth,
+    Math.max(96, object.width * pixelScale, measured.width * pixelScale),
+  );
   const overlayHeight = Math.min(
     maxOverlayHeight,
-    Math.max(fontSize * 1.55 * pixelScale, object.height * pixelScale, measured.height * pixelScale),
+    Math.max(
+      fontSize * 1.55 * pixelScale,
+      object.height * pixelScale,
+      measured.height * pixelScale,
+    ),
   );
   const overlayFontSize = fontSize * pixelScale;
   const overlayLineHeight = fontSize * 1.22 * pixelScale;
 
   const captureScrollPosition = useCallback(() => {
-    const textarea = textareaRef.current;
-    const scrollContainer = textarea?.closest<HTMLElement>('.stage-canvas-frame');
+    const textarea = textareaReference.current;
+    const scrollContainer = textarea?.closest<HTMLElement>(
+      ".stage-canvas-frame",
+    );
     if (!scrollContainer) return;
 
-    scrollContainerRef.current = scrollContainer;
-    scrollPositionRef.current = {
+    scrollContainerReference.current = scrollContainer;
+    scrollPositionReference.current = {
       left: scrollContainer.scrollLeft,
       top: scrollContainer.scrollTop,
     };
   }, []);
 
   const restoreScrollPosition = useCallback(() => {
-    const scrollContainer = scrollContainerRef.current;
+    const scrollContainer = scrollContainerReference.current;
     if (!scrollContainer) return;
 
-    scrollContainer.scrollLeft = scrollPositionRef.current.left;
-    scrollContainer.scrollTop = scrollPositionRef.current.top;
+    scrollContainer.scrollLeft = scrollPositionReference.current.left;
+    scrollContainer.scrollTop = scrollPositionReference.current.top;
   }, []);
 
   const restoreScrollAfterBrowserFocus = useCallback(() => {
@@ -69,7 +97,7 @@ export function TextEditOverlay({ object, value, onChange, onKeyDown, onBlur }: 
   }, [restoreScrollPosition]);
 
   const focusTextarea = useCallback(() => {
-    const textarea = textareaRef.current;
+    const textarea = textareaReference.current;
     if (!textarea) return;
     captureScrollPosition();
     textarea.focus({ preventScroll: true });
@@ -96,21 +124,21 @@ export function TextEditOverlay({ object, value, onChange, onKeyDown, onBlur }: 
       occlude={false}
       zIndexRange={[1_000_000, 0]}
       wrapperClass="text-edit-html"
-      style={{ pointerEvents: 'auto', zIndex: 2_147_483_647 }}
+      style={{ pointerEvents: "auto", zIndex: 2_147_483_647 }}
     >
       <div
         className="text-edit-overlay-wrap"
         style={{ transform: `rotate(${object.rotation ?? 0}deg)` }}
       >
         <textarea
-          ref={textareaRef}
+          ref={textareaReference}
           className="text-edit-overlay"
           data-scene-name={overlayName}
           style={{
             width: `${overlayWidth}px`,
             height: `${overlayHeight}px`,
-            color: 'transparent',
-            WebkitTextFillColor: 'transparent',
+            color: "transparent",
+            WebkitTextFillColor: "transparent",
             fontFamily,
             fontSize: `${overlayFontSize}px`,
             lineHeight: `${overlayLineHeight}px`,
@@ -121,13 +149,13 @@ export function TextEditOverlay({ object, value, onChange, onKeyDown, onBlur }: 
           wrap="off"
           aria-label="텍스트 입력"
           onCompositionEnd={(event) => {
-            const value = event.currentTarget.value;
+            const { value } = event.currentTarget;
             setDraftValue(value);
             onChange(value);
             restoreScrollAfterBrowserFocus();
           }}
           onInput={(event) => {
-            const value = event.currentTarget.value;
+            const { value } = event.currentTarget;
             setDraftValue(value);
             onChange(value);
             restoreScrollAfterBrowserFocus();

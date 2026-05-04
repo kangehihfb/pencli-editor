@@ -1,4 +1,4 @@
-import { Perf } from 'r3f-perf';
+import { Perf } from "r3f-perf";
 
 export function PerformanceMonitor() {
   return (
@@ -6,8 +6,8 @@ export function PerformanceMonitor() {
       className="r3f-perf-debug"
       position="bottom-left"
       style={{
-        top: 'auto',
-        right: 'auto',
+        top: "auto",
+        right: "auto",
         bottom: 12,
         left: 12,
         zIndex: 140,

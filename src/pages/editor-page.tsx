@@ -1,34 +1,42 @@
 import { useState } from "react";
+import type { RefObject } from "react";
+import type { Stroke, WebGLObject } from "../types/editor";
 import { ExamPresentation } from "../components/exam/ExamPresentation";
 import { EditorDebugPanel } from "../components/editor/debug/EditorDebugPanel";
 import { EditorStage } from "../components/editor/EditorStage";
 import { EditorToolbar } from "../components/editor/EditorToolbar";
 import { reactExams } from "../data/reactExams";
-import { useEditorState } from "../hooks/useEditorState";
+import useEditorState from "../hooks/useEditorState";
 import { PAGE_BOUNDS } from "../lib/pageGeometry";
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
+type ClampRange = {
+  min: number;
+  max: number;
+};
+
+function clamp(value: number, range: ClampRange): number {
+  return Math.min(Math.max(value, range.min), range.max);
 }
 
-export function EditorPage() {
+function EditorPage(): JSX.Element {
   const editor = useEditorState(PAGE_BOUNDS);
   const [pageZoom, setPageZoom] = useState(1);
   const [comparisonExportRequestId, setComparisonExportRequestId] = useState(0);
   const activeReactExam =
-    reactExams.find((exam) => exam.id === editor.activeExamPresetId) ?? reactExams[0];
-  const handleToolChange = (nextTool: typeof editor.tool) => {
+    reactExams.find((exam) => exam.id === editor.activeExamPresetId) ??
+    reactExams[0];
+  const handleToolChange = (nextTool: typeof editor.tool): void => {
     if (editor.editingText) {
       editor.commitTextEdit();
     }
 
     editor.setTool(nextTool);
-    editor.setDragState(null);
-    editor.setResizeState(null);
-    editor.setRotateState(null);
+    editor.setDragState(undefined);
+    editor.setResizeState(undefined);
+    editor.setRotateState(undefined);
 
     if (nextTool !== "select") {
-      editor.setSelection(null);
+      editor.setSelection(undefined);
       editor.setGroupSelection([]);
     }
   };
@@ -42,7 +50,7 @@ export function EditorPage() {
         textFontFamily={editor.activeTextFontFamily}
         textFontSize={editor.activeTextFontSize}
         penSize={editor.penSize}
-        imageInputRef={editor.imageInputRef}
+        imageInputRef={editor.imageInputRef as RefObject<HTMLInputElement>}
         onToolChange={handleToolChange}
         onPenColorChange={editor.applyColor}
         onTextFontFamilyChange={editor.applyTextFontFamily}
@@ -51,9 +59,15 @@ export function EditorPage() {
         onAddText={editor.addText}
         onAddImage={editor.addImage}
         onImageFileChange={editor.addImageFromFile}
-        onExportComparisonImages={() => setComparisonExportRequestId((value) => value + 1)}
-        onZoomIn={() => setPageZoom((value) => clamp(value * 1.2, 0.5, 3))}
-        onZoomOut={() => setPageZoom((value) => clamp(value / 1.2, 0.5, 3))}
+        onExportComparisonImages={() =>
+          setComparisonExportRequestId((value) => value + 1)
+        }
+        onZoomIn={() =>
+          setPageZoom((value) => clamp(value * 1.2, { min: 0.5, max: 3 }))
+        }
+        onZoomOut={() =>
+          setPageZoom((value) => clamp(value / 1.2, { min: 0.5, max: 3 }))
+        }
         onToggleReadonly={() => editor.setReadonly((value) => !value)}
         onDeleteSelection={editor.deleteSelection}
         onClearAll={editor.clearAll}
@@ -70,19 +84,19 @@ export function EditorPage() {
         readonly={editor.readonly}
         strokes={editor.strokes}
         objects={editor.objects}
-        activeStrokeId={editor.activeStrokeId}
+        activeStrokeId={editor.activeStrokeId as string | undefined}
         selection={editor.selection}
         groupSelection={editor.groupSelection}
         dragState={editor.dragState}
         resizeState={editor.resizeState}
         rotateState={editor.rotateState}
         editingText={editor.editingText}
-        zoomCommand={null}
+        zoomCommand={undefined}
         drawingBounds={PAGE_BOUNDS}
         pageZoom={pageZoom}
         comparisonExportRequestId={comparisonExportRequestId}
         examPresets={editor.examPresets}
-        activeExamPresetId={editor.activeExamPresetId}
+        activeExamPresetId={editor.activeExamPresetId as string | undefined}
         questionContent={<ExamPresentation exam={activeReactExam} />}
         onSelectExamPreset={editor.selectExamPreset}
         onSelectionChange={editor.setSelection}
@@ -110,11 +124,13 @@ export function EditorPage() {
       />
 
       <EditorDebugPanel
-        selectedObject={editor.selectedObject}
-        selectedStroke={editor.selectedStroke}
+        selectedObject={editor.selectedObject as WebGLObject | undefined}
+        selectedStroke={editor.selectedStroke as Stroke | undefined}
         onUpdateObject={editor.updateObject}
         onUpdateStroke={editor.updateStroke}
       />
     </main>
   );
 }
+
+export default EditorPage;

@@ -1,4 +1,4 @@
-declare module 'clipper-lib' {
+declare module "clipper-lib" {
   export type IntPoint = { X: number; Y: number };
   export type Path = IntPoint[];
   export type Paths = Path[];

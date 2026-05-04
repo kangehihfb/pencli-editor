@@ -3,71 +3,23 @@ import { Canvas } from "@react-three/fiber";
 import { Suspense, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { ExamPreset } from "../../data/examPresets";
-import { getEditorTextFontFamily } from "../../lib/editorTextFonts";
 import { exportPageImage } from "../../lib/exportPageImage";
 import { downloadClientPageExportComparison } from "../../lib/pageExportMethods";
 import { PAGE_HEIGHT, PAGE_WIDTH } from "../../lib/pageGeometry";
 import { PerformanceMonitor } from "./PerformanceMonitor";
 import { EditorScene } from "./scene/EditorScene";
-import type { EditorSceneProps } from "./scene/EditorScene";
+import type { EditorSceneProps as EditorSceneProperties } from "./scene/EditorScene";
 import { ExamLibraryOverlay } from "./ExamLibraryOverlay";
 
-const useDomTextLayerPoc = false;
-
-type EditorStageProps = EditorSceneProps & {
+type EditorStageProperties = EditorSceneProperties & {
   examPresets: ExamPreset[];
-  activeExamPresetId: string | null;
+  activeExamPresetId: string | undefined;
   onSelectExamPreset: (presetId: string) => void;
   questionContent?: ReactNode;
   pageZoom?: number;
   exportRequestId?: number;
   comparisonExportRequestId?: number;
 };
-
-function DomTextLayer({
-  objects,
-  editingText,
-}: {
-  objects: EditorSceneProps["objects"];
-  editingText: EditorSceneProps["editingText"];
-}) {
-  const textObjects = objects.filter((object) => object.kind === "text");
-  if (textObjects.length === 0) return null;
-
-  return (
-    <div className="stage-dom-text-layer" aria-hidden="true">
-      <div className="stage-dom-text-page">
-        {textObjects.map((object) => {
-          const fontSize = object.fontSize ?? 32;
-          const width = Math.max(1, object.width);
-          const height = Math.max(fontSize * 1.22, object.height);
-          const textValue = editingText?.id === object.id ? editingText.value : object.text;
-
-          return (
-            <div
-              key={object.id}
-              className="stage-dom-text-object"
-              style={{
-                left: `${object.x}px`,
-                top: `${object.y}px`,
-                width: `${width}px`,
-                minHeight: `${height}px`,
-                color: object.color,
-                fontFamily: getEditorTextFontFamily(object.fontFamily),
-                fontSize: `${fontSize}px`,
-                lineHeight: 1.22,
-                transform: `translate(-50%, -50%) rotate(${object.rotation ?? 0}deg)`,
-                zIndex: object.layer,
-              }}
-            >
-              {textValue || " "}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 type PencilReportPointerEvent = {
   type: string;
@@ -85,28 +37,29 @@ type PencilReportTouchEvent = {
   type: string;
   touches: number;
   changedTouches: number;
-  clientX: number | null;
-  clientY: number | null;
-  force: number | null;
+  clientX: number | undefined;
+  clientY: number | undefined;
+  force: number | undefined;
   timeStamp: number;
 };
 
 function shouldShowPencilReport() {
   if (typeof window === "undefined") return false;
-  const isEnabledValue = (value: string | null) => value === "" || value === "1" || value === "true";
-  const searchParams = new URLSearchParams(window.location.search);
-  if (isEnabledValue(searchParams.get("pencilReport"))) return true;
+  const isEnabledValue = (value: string | undefined) =>
+    value === "" || value === "1" || value === "true";
+  const searchParameters = new URLSearchParams(window.location.search);
+  if (isEnabledValue(searchParameters.get("pencilReport"))) return true;
 
   const hash = window.location.hash.replace(/^#\??/, "");
-  const hashParams = new URLSearchParams(hash);
-  if (isEnabledValue(hashParams.get("pencilReport"))) return true;
+  const hashParameters = new URLSearchParams(hash);
+  if (isEnabledValue(hashParameters.get("pencilReport"))) return true;
 
   return window.localStorage.getItem("pencilReport") === "1";
 }
 
 function getTouchForce(touch: unknown) {
   const candidate = touch as { force?: unknown };
-  return typeof candidate.force === "number" ? candidate.force : null;
+  return typeof candidate.force === "number" ? candidate.force : undefined;
 }
 
 function getPressureSummary(events: PencilReportPointerEvent[]) {
@@ -118,7 +71,9 @@ function getPressureSummary(events: PencilReportPointerEvent[]) {
 }
 
 function getPointerTypeSummary(events: PencilReportPointerEvent[]) {
-  const values = [...new Set(events.map((event) => event.pointerType).filter(Boolean))];
+  const values = [
+    ...new Set(events.map((event) => event.pointerType).filter(Boolean)),
+  ];
   return values.length > 0 ? values.join(", ") : "확인 불가";
 }
 
@@ -128,7 +83,7 @@ function downloadTextFile(filename: string, content: string, type: string) {
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
-  document.body.appendChild(link);
+  document.body.append(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
@@ -136,12 +91,20 @@ function downloadTextFile(filename: string, content: string, type: string) {
 
 function markdownCell(value: unknown) {
   return String(value ?? "")
-    .replace(/\|/g, "\\|")
-    .replace(/\n/g, "<br>");
+    .replaceAll("|", "\\|")
+    .replaceAll("\n", "<br>");
 }
 
-function countPointerEvents(events: PencilReportPointerEvent[], type: string, pointerType?: string) {
-  return events.filter((event) => event.type === type && (!pointerType || event.pointerType === pointerType)).length;
+function countPointerEvents(
+  events: PencilReportPointerEvent[],
+  type: string,
+  pointerType?: string,
+) {
+  return events.filter(
+    (event) =>
+      event.type === type &&
+      (!pointerType || event.pointerType === pointerType),
+  ).length;
 }
 
 function countTouchEvents(events: PencilReportTouchEvent[], type: string) {
@@ -189,41 +152,46 @@ export function EditorStage({
   pageZoom = 1,
   exportRequestId = 0,
   comparisonExportRequestId = 0,
-  ...sceneProps
-}: EditorStageProps) {
-  const frameRef = useRef<HTMLDivElement>(null);
-  const inputCaptureRef = useRef<HTMLDivElement>(null);
-  const isInputDrawingRef = useRef(false);
-  const activeInputTouchIdentifierRef = useRef<number | null>(null);
-  const strokesLengthRef = useRef(sceneProps.strokes.length);
-  const reportStartStrokeCountRef = useRef(0);
-  const reportPointerEventsRef = useRef<PencilReportPointerEvent[]>([]);
-  const reportTouchEventsRef = useRef<PencilReportTouchEvent[]>([]);
+  ...sceneProperties
+}: EditorStageProperties) {
+  const frameReference = useRef<HTMLDivElement>();
+  const inputCaptureReference = useRef<HTMLDivElement>();
+  const isInputDrawingReference = useRef(false);
+  const activeInputTouchIdentifierReference = useRef<number>();
+  const strokesLengthReference = useRef(sceneProperties.strokes.length);
+  const reportStartStrokeCountReference = useRef(0);
+  const reportPointerEventsReference = useRef<PencilReportPointerEvent[]>([]);
+  const reportTouchEventsReference = useRef<PencilReportTouchEvent[]>([]);
   const [fitScale, setFitScale] = useState(1);
   const [isViewportSyncing, setIsViewportSyncing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showPencilReport] = useState(shouldShowPencilReport);
   const [isPencilReportRecording, setIsPencilReportRecording] = useState(false);
-  const [pencilReportDevice, setPencilReportDevice] = useState("iPad + Apple Pencil");
+  const [pencilReportDevice, setPencilReportDevice] = useState(
+    "iPad + Apple Pencil",
+  );
   const [pencilReportResult, setPencilReportResult] = useState("");
   const activeExamIndex = examPresets.findIndex(
     (preset) => preset.id === activeExamPresetId,
   );
   const visibleExamNumber = activeExamIndex >= 0 ? activeExamIndex + 1 : 0;
-  const examAspectRatio = sceneProps.drawingBounds
-    ? sceneProps.drawingBounds.width / sceneProps.drawingBounds.height
+  const examAspectRatio = sceneProperties.drawingBounds
+    ? sceneProperties.drawingBounds.width / sceneProperties.drawingBounds.height
     : 1;
   const usesFixedPage = Boolean(questionContent);
   const stagePageScale = usesFixedPage ? fitScale * pageZoom : 1;
   const canvasFrameStyle = {
-    "--exam-aspect": String(usesFixedPage ? PAGE_WIDTH / PAGE_HEIGHT : examAspectRatio),
+    "--exam-aspect": String(
+      usesFixedPage ? PAGE_WIDTH / PAGE_HEIGHT : examAspectRatio,
+    ),
     "--stage-page-width": `${PAGE_WIDTH}px`,
     "--stage-page-height": `${PAGE_HEIGHT}px`,
     "--stage-page-scale": String(stagePageScale),
   } as CSSProperties;
   const shouldPassPointerToQuestion =
     Boolean(questionContent) &&
-    (sceneProps.tool === "answer" || (usesFixedPage && sceneProps.tool === "pan"));
+    (sceneProperties.tool === "answer" ||
+      (usesFixedPage && sceneProperties.tool === "pan"));
   const isInkPassive = shouldPassPointerToQuestion;
   const {
     drawingBounds,
@@ -232,23 +200,24 @@ export function EditorStage({
     onEndStroke,
     readonly,
     tool,
-  } = sceneProps;
+  } = sceneProperties;
   const shouldCaptureInkInput = tool === "pen" && !readonly && !isInkPassive;
 
   useEffect(() => {
-    strokesLengthRef.current = sceneProps.strokes.length;
-  }, [sceneProps.strokes.length]);
+    strokesLengthReference.current = sceneProperties.strokes.length;
+  }, [sceneProperties.strokes.length]);
 
   useEffect(() => {
     if (!showPencilReport || !isPencilReportRecording) return;
 
     const isReportPanelEvent = (event: Event) =>
-      event.target instanceof Element && Boolean(event.target.closest(".pencil-report-panel"));
+      event.target instanceof Element &&
+      Boolean(event.target.closest(".pencil-report-panel"));
 
     const handlePointerEvent = (event: PointerEvent) => {
       if (isReportPanelEvent(event)) return;
-      reportPointerEventsRef.current = [
-        ...reportPointerEventsRef.current,
+      reportPointerEventsReference.current = [
+        ...reportPointerEventsReference.current,
         {
           type: event.type,
           pointerType: event.pointerType,
@@ -266,15 +235,15 @@ export function EditorStage({
     const handleTouchEvent = (event: TouchEvent) => {
       if (isReportPanelEvent(event)) return;
       const touch = event.changedTouches.item(0);
-      reportTouchEventsRef.current = [
-        ...reportTouchEventsRef.current,
+      reportTouchEventsReference.current = [
+        ...reportTouchEventsReference.current,
         {
           type: event.type,
           touches: event.touches.length,
           changedTouches: event.changedTouches.length,
-          clientX: touch?.clientX ?? null,
-          clientY: touch?.clientY ?? null,
-          force: touch ? getTouchForce(touch) : null,
+          clientX: touch?.clientX ?? undefined,
+          clientY: touch?.clientY ?? undefined,
+          force: touch ? getTouchForce(touch) : undefined,
           timeStamp: event.timeStamp,
         },
       ].slice(-500);
@@ -302,34 +271,53 @@ export function EditorStage({
   }, [isPencilReportRecording, showPencilReport]);
 
   const startPencilReport = () => {
-    reportStartStrokeCountRef.current = strokesLengthRef.current;
-    reportPointerEventsRef.current = [];
-    reportTouchEventsRef.current = [];
+    reportStartStrokeCountReference.current = strokesLengthReference.current;
+    reportPointerEventsReference.current = [];
+    reportTouchEventsReference.current = [];
     setPencilReportResult("");
     setIsPencilReportRecording(true);
   };
 
   const finishPencilReport = () => {
-    const pointerEvents = reportPointerEventsRef.current;
-    const touchEvents = reportTouchEventsRef.current;
-    const startStrokeCount = reportStartStrokeCountRef.current;
-    const endStrokeCount = strokesLengthRef.current;
+    const pointerEvents = reportPointerEventsReference.current;
+    const touchEvents = reportTouchEventsReference.current;
+    const startStrokeCount = reportStartStrokeCountReference.current;
+    const endStrokeCount = strokesLengthReference.current;
     const strokeDelta = endStrokeCount - startStrokeCount;
     const pointerType = getPointerTypeSummary(pointerEvents);
     const pressure = getPressureSummary(pointerEvents);
     const firstStrokeMissing = strokeDelta > 0 ? "없음" : "있음";
-    const hasPenPointer = pointerEvents.some((event) => event.pointerType === "pen");
-    const hasPressureVariation = new Set(pointerEvents.map((event) => event.pressure.toFixed(2))).size > 2;
-    const result = strokeDelta <= 0 ? "FAIL" : hasPenPointer && hasPressureVariation ? "PASS" : "WARN";
+    const hasPenPointer = pointerEvents.some(
+      (event) => event.pointerType === "pen",
+    );
+    const hasPressureVariation =
+      new Set(pointerEvents.map((event) => event.pressure.toFixed(2))).size > 2;
+    const result =
+      strokeDelta <= 0
+        ? "FAIL"
+        : hasPenPointer && hasPressureVariation
+          ? "PASS"
+          : "WARN";
     const secureContext = String(window.isSecureContext);
     const generatedAt = new Date().toISOString();
     const deviceProfile = getDeviceProfile(pencilReportDevice);
     const pointerDownCount = countPointerEvents(pointerEvents, "pointerdown");
     const pointerMoveCount = countPointerEvents(pointerEvents, "pointermove");
     const pointerUpCount = countPointerEvents(pointerEvents, "pointerup");
-    const pointerCancelCount = countPointerEvents(pointerEvents, "pointercancel");
-    const penPointerDownCount = countPointerEvents(pointerEvents, "pointerdown", "pen");
-    const penPointerMoveCount = countPointerEvents(pointerEvents, "pointermove", "pen");
+    const pointerCancelCount = countPointerEvents(
+      pointerEvents,
+      "pointercancel",
+    );
+    const penPointerDownCount = countPointerEvents(
+      pointerEvents,
+      "pointerdown",
+      "pen",
+    );
+    const penPointerMoveCount = countPointerEvents(
+      pointerEvents,
+      "pointermove",
+      "pen",
+    );
     const touchStartCount = countTouchEvents(touchEvents, "touchstart");
     const touchMoveCount = countTouchEvents(touchEvents, "touchmove");
     const touchEndCount = countTouchEvents(touchEvents, "touchend");
@@ -337,13 +325,19 @@ export function EditorStage({
     const firstPointerDownResult = pointerDownCount > 0 ? "정상" : "누락";
     const pointerMoveContinuity = pointerMoveCount > 0 ? "정상" : "끊김";
     const touchConcurrent = touchEvents.length > 0 ? "있음" : "없음";
-    const tiltSupport = pointerEvents.some((event) => event.tiltX !== 0 || event.tiltY !== 0) ? "지원" : "미지원 또는 미확인";
+    const tiltSupport = pointerEvents.some(
+      (event) => event.tiltX !== 0 || event.tiltY !== 0,
+    )
+      ? "지원"
+      : "미지원 또는 미확인";
     const handwritingQuality = result === "FAIL" ? "FAIL" : "시각 확인 필요";
     const coordinateError = "시각 확인 필요";
     const exportIncluded = "확인 필요";
     const notes = [
       window.isSecureContext ? "secure context" : "non-secure context",
-      typeof globalThis.crypto?.randomUUID === "function" ? "randomUUID 사용 가능" : "makeId fallback 필요",
+      typeof globalThis.crypto?.randomUUID === "function"
+        ? "randomUUID 사용 가능"
+        : "makeId fallback 필요",
       shouldCaptureInkInput ? "capture layer 사용" : "capture layer 미사용",
       hasPenPointer ? "pen pointer 확인" : "pen pointer 미확인",
       hasPressureVariation ? "pressure 변화 확인" : "pressure 변화 제한",
@@ -360,11 +354,17 @@ export function EditorStage({
         secure: pencilReportDevice.includes("iPad") ? secureContext : "",
         pointerType: pencilReportDevice.includes("iPad") ? pointerType : "",
         pressure: pencilReportDevice.includes("iPad") ? pressure : "",
-        firstStrokeMissing: pencilReportDevice.includes("iPad") ? firstStrokeMissing : "",
-        coordinateError: pencilReportDevice.includes("iPad") ? coordinateError : "",
+        firstStrokeMissing: pencilReportDevice.includes("iPad")
+          ? firstStrokeMissing
+          : "",
+        coordinateError: pencilReportDevice.includes("iPad")
+          ? coordinateError
+          : "",
         quality: pencilReportDevice.includes("iPad") ? handwritingQuality : "",
         result: pencilReportDevice.includes("iPad") ? result : "TBD",
-        evidence: pencilReportDevice.includes("iPad") ? "다운로드된 JSON/MD, 화면 캡처 추가 필요" : "",
+        evidence: pencilReportDevice.includes("iPad")
+          ? "다운로드된 JSON/MD, 화면 캡처 추가 필요"
+          : "",
       },
       {
         device: "Windows PC",
@@ -375,11 +375,17 @@ export function EditorStage({
         secure: pencilReportDevice.includes("Wacom") ? secureContext : "",
         pointerType: pencilReportDevice.includes("Wacom") ? pointerType : "",
         pressure: pencilReportDevice.includes("Wacom") ? pressure : "",
-        firstStrokeMissing: pencilReportDevice.includes("Wacom") ? firstStrokeMissing : "",
-        coordinateError: pencilReportDevice.includes("Wacom") ? coordinateError : "",
+        firstStrokeMissing: pencilReportDevice.includes("Wacom")
+          ? firstStrokeMissing
+          : "",
+        coordinateError: pencilReportDevice.includes("Wacom")
+          ? coordinateError
+          : "",
         quality: pencilReportDevice.includes("Wacom") ? handwritingQuality : "",
         result: pencilReportDevice.includes("Wacom") ? result : "TBD",
-        evidence: pencilReportDevice.includes("Wacom") ? "다운로드된 JSON/MD, 화면 캡처 추가 필요" : "",
+        evidence: pencilReportDevice.includes("Wacom")
+          ? "다운로드된 JSON/MD, 화면 캡처 추가 필요"
+          : "",
       },
       {
         device: "Galaxy Tab",
@@ -390,31 +396,42 @@ export function EditorStage({
         secure: pencilReportDevice.includes("Galaxy") ? secureContext : "",
         pointerType: pencilReportDevice.includes("Galaxy") ? pointerType : "",
         pressure: pencilReportDevice.includes("Galaxy") ? pressure : "",
-        firstStrokeMissing: pencilReportDevice.includes("Galaxy") ? firstStrokeMissing : "",
-        coordinateError: pencilReportDevice.includes("Galaxy") ? coordinateError : "",
-        quality: pencilReportDevice.includes("Galaxy") ? handwritingQuality : "",
+        firstStrokeMissing: pencilReportDevice.includes("Galaxy")
+          ? firstStrokeMissing
+          : "",
+        coordinateError: pencilReportDevice.includes("Galaxy")
+          ? coordinateError
+          : "",
+        quality: pencilReportDevice.includes("Galaxy")
+          ? handwritingQuality
+          : "",
         result: pencilReportDevice.includes("Galaxy") ? result : "TBD",
-        evidence: pencilReportDevice.includes("Galaxy") ? "다운로드된 JSON/MD, 화면 캡처 추가 필요" : "",
+        evidence: pencilReportDevice.includes("Galaxy")
+          ? "다운로드된 JSON/MD, 화면 캡처 추가 필요"
+          : "",
       },
     ];
 
     const summaryTable = summaryRows
-      .map((row) =>
-        `| ${[
-          row.device,
-          row.input,
-          row.os,
-          row.browser,
-          row.url,
-          row.secure,
-          row.pointerType,
-          row.pressure,
-          row.firstStrokeMissing,
-          row.coordinateError,
-          row.quality,
-          row.result,
-          row.evidence,
-        ].map(markdownCell).join(" | ")} |`,
+      .map(
+        (row) =>
+          `| ${[
+            row.device,
+            row.input,
+            row.os,
+            row.browser,
+            row.url,
+            row.secure,
+            row.pointerType,
+            row.pressure,
+            row.firstStrokeMissing,
+            row.coordinateError,
+            row.quality,
+            row.result,
+            row.evidence,
+          ]
+            .map(markdownCell)
+            .join(" | ")} |`,
       )
       .join("\n");
 
@@ -529,13 +546,13 @@ ${currentDeviceDetail}
 ## Raw Pointer Events
 
 \`\`\`json
-${JSON.stringify(pointerEvents.slice(-80), null, 2)}
+${JSON.stringify(pointerEvents.slice(-80), undefined, 2)}
 \`\`\`
 
 ## Raw Touch Events
 
 \`\`\`json
-${JSON.stringify(touchEvents.slice(-80), null, 2)}
+${JSON.stringify(touchEvents.slice(-80), undefined, 2)}
 \`\`\`
 `;
 
@@ -572,55 +589,76 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
         pointerEvents,
         touchEvents,
       },
-      null,
+      undefined,
       2,
     );
 
     setIsPencilReportRecording(false);
     setPencilReportResult(markdown);
-    downloadTextFile("pencil-handwriting-device-report.md", markdown, "text/markdown;charset=utf-8");
-    downloadTextFile("pencil-handwriting-device-report.json", json, "application/json;charset=utf-8");
+    downloadTextFile(
+      "pencil-handwriting-device-report.md",
+      markdown,
+      "text/markdown;charset=utf-8",
+    );
+    downloadTextFile(
+      "pencil-handwriting-device-report.json",
+      json,
+      "application/json;charset=utf-8",
+    );
   };
 
   useEffect(() => {
     if (!shouldCaptureInkInput) return;
 
-    const captureElement = inputCaptureRef.current;
+    const captureElement = inputCaptureReference.current;
     if (!captureElement) return;
 
     const getInputPoint = (clientX: number, clientY: number) => {
       const shell = captureElement.closest<HTMLElement>(".stage-canvas-shell");
-      if (!shell || !drawingBounds) return null;
+      if (!shell || !drawingBounds) return undefined;
 
       const rect = shell.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return null;
-      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+      if (rect.width <= 0 || rect.height <= 0) return undefined;
+      if (
+        clientX < rect.left ||
+        clientX > rect.right ||
+        clientY < rect.top ||
+        clientY > rect.bottom
+      )
+        return undefined;
 
       return {
         x: Math.min(
-          Math.max(((clientX - rect.left) / rect.width) * PAGE_WIDTH, drawingBounds.minX),
+          Math.max(
+            ((clientX - rect.left) / rect.width) * PAGE_WIDTH,
+            drawingBounds.minX,
+          ),
           drawingBounds.maxX,
         ),
         y: Math.min(
-          Math.max(((clientY - rect.top) / rect.height) * PAGE_HEIGHT, drawingBounds.minY),
+          Math.max(
+            ((clientY - rect.top) / rect.height) * PAGE_HEIGHT,
+            drawingBounds.minY,
+          ),
           drawingBounds.maxY,
         ),
       };
     };
 
     const beginStroke = (clientX: number, clientY: number) => {
-      if (isInputDrawingRef.current) return true;
+      if (isInputDrawingReference.current) return true;
 
       const point = getInputPoint(clientX, clientY);
       if (!point) return false;
 
-      isInputDrawingRef.current = true;
+      isInputDrawingReference.current = true;
       onBeginStroke(point);
       return true;
     };
 
     const appendStroke = (clientX: number, clientY: number) => {
-      if (!isInputDrawingRef.current && !beginStroke(clientX, clientY)) return;
+      if (!isInputDrawingReference.current && !beginStroke(clientX, clientY))
+        return;
 
       const point = getInputPoint(clientX, clientY);
       if (!point) return;
@@ -629,10 +667,10 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
     };
 
     const finishStroke = () => {
-      if (!isInputDrawingRef.current) return;
+      if (!isInputDrawingReference.current) return;
 
-      isInputDrawingRef.current = false;
-      activeInputTouchIdentifierRef.current = null;
+      isInputDrawingReference.current = false;
+      activeInputTouchIdentifierReference.current = undefined;
       onEndStroke();
     };
 
@@ -649,7 +687,7 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
     };
 
     const handlePointerMove = (event: PointerEvent) => {
-      if (!isInputDrawingRef.current && event.pressure <= 0) return;
+      if (!isInputDrawingReference.current && event.pressure <= 0) return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -657,7 +695,7 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
     };
 
     const handlePointerEnd = (event: PointerEvent) => {
-      if (!isInputDrawingRef.current) return;
+      if (!isInputDrawingReference.current) return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -672,15 +710,15 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
     };
 
     const getActiveTouch = (touches: TouchList) => {
-      const activeIdentifier = activeInputTouchIdentifierRef.current;
-      if (activeIdentifier === null) return touches.item(0);
+      const activeIdentifier = activeInputTouchIdentifierReference.current;
+      if (activeIdentifier === undefined) return touches.item(0);
 
       for (let index = 0; index < touches.length; index += 1) {
         const touch = touches.item(index);
         if (touch?.identifier === activeIdentifier) return touch;
       }
 
-      return null;
+      return undefined;
     };
 
     const handleTouchStart = (event: TouchEvent) => {
@@ -689,7 +727,7 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
 
       event.preventDefault();
       event.stopPropagation();
-      activeInputTouchIdentifierRef.current = touch.identifier;
+      activeInputTouchIdentifierReference.current = touch.identifier;
     };
 
     const handleTouchMove = (event: TouchEvent) => {
@@ -702,33 +740,75 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
     };
 
     const handleTouchEnd = (event: TouchEvent) => {
-      if (!isInputDrawingRef.current || !getActiveTouch(event.changedTouches)) return;
+      if (
+        !isInputDrawingReference.current ||
+        !getActiveTouch(event.changedTouches)
+      )
+        return;
 
       event.preventDefault();
       event.stopPropagation();
       finishStroke();
     };
 
-    captureElement.addEventListener("pointerdown", handlePointerDown, { capture: true });
-    captureElement.addEventListener("pointermove", handlePointerMove, { capture: true });
-    captureElement.addEventListener("pointerup", handlePointerEnd, { capture: true });
-    captureElement.addEventListener("pointercancel", handlePointerEnd, { capture: true });
-    captureElement.addEventListener("touchstart", handleTouchStart, { capture: true, passive: false });
-    captureElement.addEventListener("touchmove", handleTouchMove, { capture: true, passive: false });
-    captureElement.addEventListener("touchend", handleTouchEnd, { capture: true, passive: false });
-    captureElement.addEventListener("touchcancel", handleTouchEnd, { capture: true, passive: false });
+    captureElement.addEventListener("pointerdown", handlePointerDown, {
+      capture: true,
+    });
+    captureElement.addEventListener("pointermove", handlePointerMove, {
+      capture: true,
+    });
+    captureElement.addEventListener("pointerup", handlePointerEnd, {
+      capture: true,
+    });
+    captureElement.addEventListener("pointercancel", handlePointerEnd, {
+      capture: true,
+    });
+    captureElement.addEventListener("touchstart", handleTouchStart, {
+      capture: true,
+      passive: false,
+    });
+    captureElement.addEventListener("touchmove", handleTouchMove, {
+      capture: true,
+      passive: false,
+    });
+    captureElement.addEventListener("touchend", handleTouchEnd, {
+      capture: true,
+      passive: false,
+    });
+    captureElement.addEventListener("touchcancel", handleTouchEnd, {
+      capture: true,
+      passive: false,
+    });
 
     return () => {
-      captureElement.removeEventListener("pointerdown", handlePointerDown, true);
-      captureElement.removeEventListener("pointermove", handlePointerMove, true);
+      captureElement.removeEventListener(
+        "pointerdown",
+        handlePointerDown,
+        true,
+      );
+      captureElement.removeEventListener(
+        "pointermove",
+        handlePointerMove,
+        true,
+      );
       captureElement.removeEventListener("pointerup", handlePointerEnd, true);
-      captureElement.removeEventListener("pointercancel", handlePointerEnd, true);
+      captureElement.removeEventListener(
+        "pointercancel",
+        handlePointerEnd,
+        true,
+      );
       captureElement.removeEventListener("touchstart", handleTouchStart, true);
       captureElement.removeEventListener("touchmove", handleTouchMove, true);
       captureElement.removeEventListener("touchend", handleTouchEnd, true);
       captureElement.removeEventListener("touchcancel", handleTouchEnd, true);
     };
-  }, [drawingBounds, onAppendStrokePoint, onBeginStroke, onEndStroke, shouldCaptureInkInput]);
+  }, [
+    drawingBounds,
+    onAppendStrokePoint,
+    onBeginStroke,
+    onEndStroke,
+    shouldCaptureInkInput,
+  ]);
 
   useEffect(() => {
     if (!usesFixedPage) {
@@ -736,14 +816,14 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
       return;
     }
 
-    const frame = frameRef.current;
+    const frame = frameReference.current;
     if (!frame) return;
-    let resizeSettledTimer: number | null = null;
-    let syncAnimationFrame: number | null = null;
+    let resizeSettledTimer: number | undefined = undefined;
+    let syncAnimationFrame: number | undefined = undefined;
 
     const getNextScale = () => {
       const rect = frame.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return null;
+      if (rect.width <= 0 || rect.height <= 0) return undefined;
 
       return Math.max(
         0.1,
@@ -753,9 +833,9 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
 
     const updateScale = (immediate = false) => {
       const nextScale = getNextScale();
-      if (nextScale === null) return;
+      if (nextScale === undefined) return;
 
-      if (resizeSettledTimer !== null) {
+      if (resizeSettledTimer !== undefined) {
         window.clearTimeout(resizeSettledTimer);
       }
 
@@ -802,10 +882,10 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
     observer.observe(frame);
     return () => {
       observer.disconnect();
-      if (resizeSettledTimer !== null) {
+      if (resizeSettledTimer !== undefined) {
         window.clearTimeout(resizeSettledTimer);
       }
-      if (syncAnimationFrame !== null) {
+      if (syncAnimationFrame !== undefined) {
         window.cancelAnimationFrame(syncAnimationFrame);
       }
     };
@@ -821,8 +901,10 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
       requestAnimationFrame(() => {
         if (cancelled) return;
 
-        const frame = frameRef.current;
-        const pageElement = frame?.querySelector<HTMLElement>(".stage-react-exam-page");
+        const frame = frameReference.current;
+        const pageElement = frame?.querySelector<HTMLElement>(
+          ".stage-react-exam-page",
+        );
         const webglCanvas = frame?.querySelector<HTMLCanvasElement>(
           "canvas.stage-canvas, .stage-canvas canvas, canvas",
         );
@@ -864,8 +946,10 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
       requestAnimationFrame(() => {
         if (cancelled) return;
 
-        const frame = frameRef.current;
-        const pageElement = frame?.querySelector<HTMLElement>(".stage-react-exam-page");
+        const frame = frameReference.current;
+        const pageElement = frame?.querySelector<HTMLElement>(
+          ".stage-react-exam-page",
+        );
         const webglCanvas = frame?.querySelector<HTMLCanvasElement>(
           "canvas.stage-canvas, .stage-canvas canvas, canvas",
         );
@@ -882,8 +966,8 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
           pageZoom,
           stagePageScale,
           editorState: {
-            strokes: sceneProps.strokes,
-            objects: sceneProps.objects,
+            strokes: sceneProperties.strokes,
+            objects: sceneProperties.objects,
           },
         })
           .catch((error) => {
@@ -912,7 +996,7 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
         </div>
       </div>
       <div
-        ref={frameRef}
+        ref={frameReference}
         className={[
           "stage-canvas-frame",
           usesFixedPage ? "is-fixed-page" : "",
@@ -923,17 +1007,23 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
           .join(" ")}
         style={canvasFrameStyle}
       >
-        <div className={usesFixedPage ? "stage-page-scale-box" : "stage-page-scale-box is-fluid"}>
+        <div
+          className={
+            usesFixedPage
+              ? "stage-page-scale-box"
+              : "stage-page-scale-box is-fluid"
+          }
+        >
           <div className="stage-canvas-shell">
             {questionContent ? (
               <div className="stage-react-exam-layer">
-                <div className="stage-react-exam-page">
-                  {questionContent}
-                </div>
+                <div className="stage-react-exam-page">{questionContent}</div>
               </div>
-            ) : null}
+            ) : undefined}
             <div
-              className={isInkPassive ? "stage-ink-layer is-passive" : "stage-ink-layer"}
+              className={
+                isInkPassive ? "stage-ink-layer is-passive" : "stage-ink-layer"
+              }
               style={isInkPassive ? { pointerEvents: "none" } : undefined}
             >
               <Canvas
@@ -942,7 +1032,7 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
                 gl={{ alpha: true, preserveDrawingBuffer: true }}
                 style={isInkPassive ? { pointerEvents: "none" } : undefined}
               >
-                {!isInkPassive ? <PerformanceMonitor /> : null}
+                {isInkPassive ? undefined : <PerformanceMonitor />}
                 <OrthographicCamera
                   makeDefault
                   position={[0, 0, 7]}
@@ -950,26 +1040,28 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
                   near={0.1}
                   far={100}
                 />
-                {!questionContent ? <color attach="background" args={["#ffffff"]} /> : null}
+                {questionContent ? undefined : (
+                  <color attach="background" args={["#ffffff"]} />
+                )}
                 <ambientLight intensity={1.4} />
-                <Suspense fallback={null}>
+                <Suspense fallback={undefined}>
                   <EditorScene
-                    {...sceneProps}
-                    readonly={isInkPassive || sceneProps.readonly}
+                    {...sceneProperties}
+                    readonly={isInkPassive || sceneProperties.readonly}
                     hideEditorChrome={isInkPassive || isExporting}
                     renderSceneBackground={!questionContent}
-                    renderTextVisualLayer={!useDomTextLayerPoc}
                     viewportLocked={usesFixedPage}
                   />
                 </Suspense>
               </Canvas>
             </div>
-            {useDomTextLayerPoc ? (
-              <DomTextLayer objects={sceneProps.objects} editingText={sceneProps.editingText} />
-            ) : null}
             {shouldCaptureInkInput ? (
-              <div ref={inputCaptureRef} className="stage-input-capture" aria-hidden="true" />
-            ) : null}
+              <div
+                ref={inputCaptureReference}
+                className="stage-input-capture"
+                aria-hidden="true"
+              />
+            ) : undefined}
           </div>
         </div>
       </div>
@@ -1000,26 +1092,43 @@ ${JSON.stringify(touchEvents.slice(-80), null, 2)}
             <span>문구</span>
             <strong>안녕하세요</strong>
             <span>strokes</span>
-            <strong>{sceneProps.strokes.length}</strong>
+            <strong>{sceneProperties.strokes.length}</strong>
             <span>secure</span>
-            <strong>{typeof window === "undefined" ? "n/a" : String(window.isSecureContext)}</strong>
+            <strong>
+              {typeof window === "undefined"
+                ? "n/a"
+                : String(window.isSecureContext)}
+            </strong>
           </div>
           <div className="pencil-report-actions">
-            <button type="button" onClick={startPencilReport} disabled={isPencilReportRecording}>
+            <button
+              type="button"
+              onClick={startPencilReport}
+              disabled={isPencilReportRecording}
+            >
               Start
             </button>
-            <button type="button" onClick={finishPencilReport} disabled={!isPencilReportRecording}>
+            <button
+              type="button"
+              onClick={finishPencilReport}
+              disabled={!isPencilReportRecording}
+            >
               Finish & Download
             </button>
           </div>
           <p>
-            Start를 누른 뒤 캔버스에 <strong>안녕하세요</strong>를 쓰고 Finish를 누르면 Markdown/JSON 리포트가 저장됩니다.
+            Start를 누른 뒤 캔버스에 <strong>안녕하세요</strong>를 쓰고 Finish를
+            누르면 Markdown/JSON 리포트가 저장됩니다.
           </p>
           {pencilReportResult ? (
-            <textarea readOnly value={pencilReportResult} aria-label="생성된 펜슬 입력 리포트" />
-          ) : null}
+            <textarea
+              readOnly
+              value={pencilReportResult}
+              aria-label="생성된 펜슬 입력 리포트"
+            />
+          ) : undefined}
         </aside>
-      ) : null}
+      ) : undefined}
     </section>
   );
 }

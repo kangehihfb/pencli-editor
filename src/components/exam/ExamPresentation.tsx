@@ -1,21 +1,26 @@
-import { useState } from 'react';
-import type { ReactExam } from '../../types/exam';
-import { MultipleChoiceQuestionInput } from './MultipleChoiceQuestionInput';
-import { SubjectiveQuestionInput } from './SubjectiveQuestionInput';
+import { useState } from "react";
+import type { ReactExam } from "../../types/exam";
+import { MultipleChoiceQuestionInput } from "./MultipleChoiceQuestionInput";
+import { SubjectiveQuestionInput } from "./SubjectiveQuestionInput";
 
-type ExamPresentationProps = {
+type ExamPresentationProperties = {
   exam: ReactExam;
 };
 
-export function ExamPresentation({ exam }: ExamPresentationProps) {
-  const [shortAnswers, setShortAnswers] = useState<Record<string, string[]>>({});
+export function ExamPresentation({ exam }: ExamPresentationProperties) {
+  const [shortAnswers, setShortAnswers] = useState<Record<string, string[]>>(
+    {},
+  );
   const [multipleChoiceAnswers, setMultipleChoiceAnswers] = useState<
-    Record<string, number | null>
+    Record<string, number | undefined>
   >(() =>
     Object.fromEntries(
       exam.subQuestions
-        .filter((subQuestion) => subQuestion.type === 'multipleChoice')
-        .map((subQuestion) => [subQuestion.id, subQuestion.selectedIndex ?? null]),
+        .filter((subQuestion) => subQuestion.type === "multipleChoice")
+        .map((subQuestion) => [
+          subQuestion.id,
+          subQuestion.selectedIndex ?? undefined,
+        ]),
     ),
   );
   const submitted = Boolean(exam.submittedAt);
@@ -27,31 +32,37 @@ export function ExamPresentation({ exam }: ExamPresentationProps) {
           <div className="react-exam-title-group">
             {exam.categoryLabel ? (
               <span className="react-exam-category">{exam.categoryLabel}</span>
-            ) : null}
-            {exam.required ? <strong className="react-exam-required">필수</strong> : null}
+            ) : undefined}
+            {exam.required ? (
+              <strong className="react-exam-required">필수</strong>
+            ) : undefined}
             {exam.questionNumber ? (
-              <strong className="react-exam-question-number">{exam.questionNumber}</strong>
-            ) : null}
+              <strong className="react-exam-question-number">
+                {exam.questionNumber}
+              </strong>
+            ) : undefined}
           </div>
 
           {exam.difficultyLabel ? (
             <div className="react-exam-header-actions">
-              <span className="react-exam-difficulty">{exam.difficultyLabel}</span>
+              <span className="react-exam-difficulty">
+                {exam.difficultyLabel}
+              </span>
               <span className="react-exam-bookmark" aria-hidden="true">
                 <span />
               </span>
             </div>
-          ) : null}
+          ) : undefined}
         </div>
       </header>
 
       <section className="react-exam-body">
         {exam.body.map((block, index) => {
-          if (block.type === 'text') {
+          if (block.type === "text") {
             return <p key={index}>{block.text}</p>;
           }
 
-          if (block.type === 'math') {
+          if (block.type === "math") {
             return (
               <p key={index} className="react-exam-math">
                 {block.tex}
@@ -64,7 +75,7 @@ export function ExamPresentation({ exam }: ExamPresentationProps) {
               key={index}
               className="react-exam-image"
               src={block.src}
-              alt={block.alt ?? ''}
+              alt={block.alt ?? ""}
             />
           );
         })}
@@ -72,15 +83,15 @@ export function ExamPresentation({ exam }: ExamPresentationProps) {
 
       <section className="react-exam-questions">
         {exam.subQuestions.map((subQuestion) => {
-          if (subQuestion.type === 'shortAnswer') {
+          if (subQuestion.type === "shortAnswer") {
             return (
               <SubjectiveQuestionInput
                 key={subQuestion.id}
                 subQuestion={subQuestion}
                 value={shortAnswers[subQuestion.id] ?? []}
                 onChange={(value) => {
-                  setShortAnswers((prev) => ({
-                    ...prev,
+                  setShortAnswers((previous) => ({
+                    ...previous,
                     [subQuestion.id]: value,
                   }));
                 }}
@@ -92,11 +103,11 @@ export function ExamPresentation({ exam }: ExamPresentationProps) {
             <MultipleChoiceQuestionInput
               key={subQuestion.id}
               subQuestion={subQuestion}
-              selectedIndex={multipleChoiceAnswers[subQuestion.id] ?? null}
+              selectedIndex={multipleChoiceAnswers[subQuestion.id] ?? undefined}
               submitted={submitted}
               onSelect={(selectedIndex) => {
-                setMultipleChoiceAnswers((prev) => ({
-                  ...prev,
+                setMultipleChoiceAnswers((previous) => ({
+                  ...previous,
                   [subQuestion.id]: selectedIndex,
                 }));
               }}
@@ -106,9 +117,8 @@ export function ExamPresentation({ exam }: ExamPresentationProps) {
       </section>
 
       {exam.submittedAt ? (
-        <footer className="react-exam-submit-status">
-        </footer>
-      ) : null}
+        <footer className="react-exam-submit-status" />
+      ) : undefined}
     </article>
   );
 }

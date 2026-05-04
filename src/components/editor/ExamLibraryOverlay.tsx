@@ -1,8 +1,8 @@
 import type { ExamPreset } from "../../data/examPresets";
 
-type ExamLibraryOverlayProps = {
+type ExamLibraryOverlayProperties = {
   presets: ExamPreset[];
-  activePresetId: string | null;
+  activePresetId: string | undefined;
   onSelectPreset: (presetId: string) => void;
 };
 
@@ -10,7 +10,7 @@ export function ExamLibraryOverlay({
   presets,
   activePresetId,
   onSelectPreset,
-}: ExamLibraryOverlayProps) {
+}: ExamLibraryOverlayProperties) {
   return (
     <aside className="exam-library-panel" aria-label="시험지 라이브러리">
       <div className="exam-library-list">

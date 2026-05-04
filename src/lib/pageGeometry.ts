@@ -1,4 +1,4 @@
-import type { PointBounds } from '../types/editor';
+import type { PointBounds } from "../types/editor";
 
 export const PAGE_WIDTH = 1024;
 export const PAGE_HEIGHT = 768;

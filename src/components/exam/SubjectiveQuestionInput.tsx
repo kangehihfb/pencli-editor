@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import type { ShortAnswerSubQuestion } from '../../types/exam';
+import { useState } from "react";
+import type { ShortAnswerSubQuestion } from "../../types/exam";
 
-type SubjectiveQuestionInputProps = {
+type SubjectiveQuestionInputProperties = {
   subQuestion: ShortAnswerSubQuestion;
   value: string[];
   onChange: (value: string[]) => void;
@@ -11,11 +11,11 @@ export function SubjectiveQuestionInput({
   subQuestion,
   value,
   onChange,
-}: SubjectiveQuestionInputProps) {
+}: SubjectiveQuestionInputProperties) {
   const [submitted, setSubmitted] = useState(false);
   const answerValues = Array.from(
     { length: subQuestion.answerCount },
-    (_, index) => value[index] ?? '',
+    (_, index) => value[index] ?? "",
   );
   const hasAnswer = answerValues.some((answer) => answer.trim().length > 0);
 
@@ -30,9 +30,15 @@ export function SubjectiveQuestionInput({
     <section className="exam-sub-question">
       {subQuestion.prompt ? (
         <label className="exam-sub-question-label">{subQuestion.prompt}</label>
-      ) : null}
+      ) : undefined}
 
-      <div className={hasAnswer ? 'exam-answer-list exam-short-answer-list has-submit-action' : 'exam-answer-list exam-short-answer-list'}>
+      <div
+        className={
+          hasAnswer
+            ? "exam-answer-list exam-short-answer-list has-submit-action"
+            : "exam-answer-list exam-short-answer-list"
+        }
+      >
         {answerValues.map((answer, index) => (
           <input
             key={index}
@@ -52,10 +58,10 @@ export function SubjectiveQuestionInput({
             disabled={submitted}
             onClick={() => setSubmitted(true)}
           >
-            {submitted ? '제출 완료' : '제출하기'}
+            {submitted ? "제출 완료" : "제출하기"}
           </button>
         </div>
-      ) : null}
+      ) : undefined}
     </section>
   );
 }

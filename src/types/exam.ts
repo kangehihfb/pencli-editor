@@ -1,21 +1,21 @@
 export type QuestionBodyBlock =
   | {
-      type: 'text';
+      type: "text";
       text: string;
     }
   | {
-      type: 'math';
+      type: "math";
       tex: string;
     }
   | {
-      type: 'image';
+      type: "image";
       src: string;
       alt?: string;
     };
 
 export type ShortAnswerSubQuestion = {
   id: string;
-  type: 'shortAnswer';
+  type: "shortAnswer";
   prompt?: string;
   placeholder?: string;
   answerCount: number;
@@ -23,13 +23,15 @@ export type ShortAnswerSubQuestion = {
 
 export type MultipleChoiceSubQuestion = {
   id: string;
-  type: 'multipleChoice';
+  type: "multipleChoice";
   prompt?: string;
   choices: string[];
-  selectedIndex?: number | null;
+  selectedIndex?: number | undefined;
 };
 
-export type ExamSubQuestion = ShortAnswerSubQuestion | MultipleChoiceSubQuestion;
+export type ExamSubQuestion =
+  | ShortAnswerSubQuestion
+  | MultipleChoiceSubQuestion;
 
 export type ReactExam = {
   id: string;

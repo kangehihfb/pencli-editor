@@ -28,7 +28,7 @@ import type {
 import { EDITOR_TEXT_FONT_PRESETS } from "../../lib/editorTextFonts";
 import type { Tool } from "../../types/editor";
 
-type EditorToolbarProps = {
+type EditorToolbarProperties = {
   tool: Tool;
   readonly: boolean;
   penColor: string;
@@ -112,21 +112,21 @@ export function EditorToolbar({
   onRedo,
   canUndo,
   canRedo,
-}: EditorToolbarProps) {
+}: EditorToolbarProperties) {
   const [toolTabOffset, setToolTabOffset] = useState({ x: 0, y: 0 });
-  const dragStateRef = useRef<{
+  const dragStateReference = useRef<{
     startX: number;
     startY: number;
     originX: number;
     originY: number;
-  } | null>(null);
+  } | undefined>(undefined);
 
   const handleToolTabDragStart = (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
     event.preventDefault();
     event.stopPropagation();
-    dragStateRef.current = {
+    dragStateReference.current = {
       startX: event.clientX,
       startY: event.clientY,
       originX: toolTabOffset.x,
@@ -138,7 +138,7 @@ export function EditorToolbar({
   const handleToolTabDragMove = (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
-    const dragState = dragStateRef.current;
+    const dragState = dragStateReference.current;
     if (!dragState) return;
 
     setToolTabOffset({
@@ -161,7 +161,7 @@ export function EditorToolbar({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    dragStateRef.current = null;
+    dragStateReference.current = undefined;
   };
 
   const toolTabStyle = {
@@ -198,7 +198,7 @@ export function EditorToolbar({
             onPointerUp={handleToolTabDragEnd}
             onPointerCancel={handleToolTabDragEnd}
             onLostPointerCapture={() => {
-              dragStateRef.current = null;
+              dragStateReference.current = undefined;
             }}
             onDoubleClick={() => setToolTabOffset({ x: 0, y: 0 })}
           >
@@ -343,7 +343,9 @@ export function EditorToolbar({
                 step={1}
                 value={Math.round(textFontSize)}
                 aria-label="텍스트 크기"
-                onChange={(event) => onTextFontSizeChange(Number(event.target.value))}
+                onChange={(event) =>
+                  onTextFontSizeChange(Number(event.target.value))
+                }
               />
             </label>
             <ToolButton label="텍스트 추가" onClick={onAddText}>
@@ -352,7 +354,10 @@ export function EditorToolbar({
             <ToolButton label="이미지 추가" onClick={onAddImage}>
               <ImagePlus size={18} />
             </ToolButton>
-            <ToolButton label="비교 이미지 저장" onClick={onExportComparisonImages}>
+            <ToolButton
+              label="비교 이미지 저장"
+              onClick={onExportComparisonImages}
+            >
               <Download size={18} />
             </ToolButton>
             <ToolButton label="축소" onClick={onZoomOut}>

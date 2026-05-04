@@ -1,12 +1,20 @@
-import { useControls } from 'leva';
-import { useEffect, useRef } from 'react';
-import type { Stroke, WebGLObject } from '../../../types/editor';
+import { useControls } from "leva";
+import { useEffect, useRef } from "react";
+import type { Stroke, WebGLObject } from "../../../types/editor";
 
-type SelectionDebugControlsProps = {
-  selectedObject: WebGLObject | null;
-  selectedStroke: Stroke | null;
-  onUpdateObject: (id: string, patch: Partial<Pick<WebGLObject, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'layer'>>) => void;
-  onUpdateStroke: (id: string, patch: Partial<Pick<Stroke, 'layer' | 'size'>>) => void;
+type SelectionDebugControlsProperties = {
+  selectedObject: WebGLObject | undefined;
+  selectedStroke: Stroke | undefined;
+  onUpdateObject: (
+    id: string,
+    patch: Partial<
+      Pick<WebGLObject, "x" | "y" | "width" | "height" | "rotation" | "layer">
+    >,
+  ) => void;
+  onUpdateStroke: (
+    id: string,
+    patch: Partial<Pick<Stroke, "layer" | "size">>,
+  ) => void;
 };
 
 export function SelectionDebugControls({
@@ -14,26 +22,26 @@ export function SelectionDebugControls({
   selectedStroke,
   onUpdateObject,
   onUpdateStroke,
-}: SelectionDebugControlsProps) {
-  const selectedId = selectedObject?.id ?? selectedStroke?.id ?? 'none';
-  const selectedObjectRef = useRef(selectedObject);
-  const selectedStrokeRef = useRef(selectedStroke);
-  const ignoreDebugChangesUntilRef = useRef(0);
+}: SelectionDebugControlsProperties) {
+  const selectedId = selectedObject?.id ?? selectedStroke?.id ?? "none";
+  const selectedObjectReference = useRef(selectedObject);
+  const selectedStrokeReference = useRef(selectedStroke);
+  const ignoreDebugChangesUntilReference = useRef(0);
 
   useEffect(() => {
-    selectedObjectRef.current = selectedObject;
-    selectedStrokeRef.current = selectedStroke;
+    selectedObjectReference.current = selectedObject;
+    selectedStrokeReference.current = selectedStroke;
   }, [selectedObject, selectedStroke]);
 
   const [, setDebugControls] = useControls(
-    'Selected Element',
+    "Selected Element",
     () => ({
       type: {
-        value: 'none',
+        value: "none",
         editable: false,
       },
       id: {
-        value: 'none',
+        value: "none",
         editable: false,
       },
       x: {
@@ -42,8 +50,9 @@ export function SelectionDebugControls({
         max: 1000,
         step: 1,
         onChange: (value: number) => {
-          if (Date.now() < ignoreDebugChangesUntilRef.current) return;
-          if (selectedObjectRef.current) onUpdateObject(selectedObjectRef.current.id, { x: value });
+          if (Date.now() < ignoreDebugChangesUntilReference.current) return;
+          if (selectedObjectReference.current)
+            onUpdateObject(selectedObjectReference.current.id, { x: value });
         },
       },
       y: {
@@ -52,8 +61,9 @@ export function SelectionDebugControls({
         max: 760,
         step: 1,
         onChange: (value: number) => {
-          if (Date.now() < ignoreDebugChangesUntilRef.current) return;
-          if (selectedObjectRef.current) onUpdateObject(selectedObjectRef.current.id, { y: value });
+          if (Date.now() < ignoreDebugChangesUntilReference.current) return;
+          if (selectedObjectReference.current)
+            onUpdateObject(selectedObjectReference.current.id, { y: value });
         },
       },
       width: {
@@ -62,8 +72,11 @@ export function SelectionDebugControls({
         max: 1000,
         step: 1,
         onChange: (value: number) => {
-          if (Date.now() < ignoreDebugChangesUntilRef.current) return;
-          if (selectedObjectRef.current) onUpdateObject(selectedObjectRef.current.id, { width: value });
+          if (Date.now() < ignoreDebugChangesUntilReference.current) return;
+          if (selectedObjectReference.current)
+            onUpdateObject(selectedObjectReference.current.id, {
+              width: value,
+            });
         },
       },
       height: {
@@ -72,8 +85,11 @@ export function SelectionDebugControls({
         max: 760,
         step: 1,
         onChange: (value: number) => {
-          if (Date.now() < ignoreDebugChangesUntilRef.current) return;
-          if (selectedObjectRef.current) onUpdateObject(selectedObjectRef.current.id, { height: value });
+          if (Date.now() < ignoreDebugChangesUntilReference.current) return;
+          if (selectedObjectReference.current)
+            onUpdateObject(selectedObjectReference.current.id, {
+              height: value,
+            });
         },
       },
       rotation: {
@@ -82,8 +98,11 @@ export function SelectionDebugControls({
         max: 180,
         step: 1,
         onChange: (value: number) => {
-          if (Date.now() < ignoreDebugChangesUntilRef.current) return;
-          if (selectedObjectRef.current) onUpdateObject(selectedObjectRef.current.id, { rotation: value });
+          if (Date.now() < ignoreDebugChangesUntilReference.current) return;
+          if (selectedObjectReference.current)
+            onUpdateObject(selectedObjectReference.current.id, {
+              rotation: value,
+            });
         },
       },
       layer: {
@@ -92,9 +111,15 @@ export function SelectionDebugControls({
         max: 100,
         step: 1,
         onChange: (value: number) => {
-          if (Date.now() < ignoreDebugChangesUntilRef.current) return;
-          if (selectedObjectRef.current) onUpdateObject(selectedObjectRef.current.id, { layer: value });
-          if (selectedStrokeRef.current) onUpdateStroke(selectedStrokeRef.current.id, { layer: value });
+          if (Date.now() < ignoreDebugChangesUntilReference.current) return;
+          if (selectedObjectReference.current)
+            onUpdateObject(selectedObjectReference.current.id, {
+              layer: value,
+            });
+          if (selectedStrokeReference.current)
+            onUpdateStroke(selectedStrokeReference.current.id, {
+              layer: value,
+            });
         },
       },
       strokeSize: {
@@ -103,8 +128,9 @@ export function SelectionDebugControls({
         max: 16,
         step: 0.5,
         onChange: (value: number) => {
-          if (Date.now() < ignoreDebugChangesUntilRef.current) return;
-          if (selectedStrokeRef.current) onUpdateStroke(selectedStrokeRef.current.id, { size: value });
+          if (Date.now() < ignoreDebugChangesUntilReference.current) return;
+          if (selectedStrokeReference.current)
+            onUpdateStroke(selectedStrokeReference.current.id, { size: value });
         },
       },
     }),
@@ -112,9 +138,13 @@ export function SelectionDebugControls({
   );
 
   useEffect(() => {
-    ignoreDebugChangesUntilRef.current = Date.now() + 150;
+    ignoreDebugChangesUntilReference.current = Date.now() + 150;
     setDebugControls({
-      type: selectedObject ? selectedObject.kind : selectedStroke ? 'stroke' : 'none',
+      type: selectedObject
+        ? selectedObject.kind
+        : selectedStroke
+          ? "stroke"
+          : "none",
       id: selectedId.slice(0, 18),
       x: selectedObject?.x ?? 0,
       y: selectedObject?.y ?? 0,
@@ -126,5 +156,5 @@ export function SelectionDebugControls({
     });
   }, [selectedId, selectedObject, selectedStroke, setDebugControls]);
 
-  return null;
+  return undefined;
 }

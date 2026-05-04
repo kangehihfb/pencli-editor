@@ -1,12 +1,12 @@
-import * as THREE from 'three';
-import { getEditorPointerPoint } from '../../../lib/sceneMath';
-import type { Point2D, PointBounds } from '../../../types/editor';
+import * as THREE from "three";
+import { getEditorPointerPoint } from "../../../lib/sceneMath";
+import type { Point2D, PointBounds } from "../../../types/editor";
 
-const selectionGreen = '#22c55e';
+const selectionGreen = "#22c55e";
 const selectionRenderOrder = 1_000_000;
 
 export function SelectedMoveSurface({
-  name = 'selection:move-surface',
+  name = "selection:move-surface",
   width,
   height,
   onMoveStart,
@@ -27,13 +27,18 @@ export function SelectedMoveSurface({
       }}
     >
       <planeGeometry args={[width, height]} />
-      <meshBasicMaterial transparent opacity={0} depthTest={false} depthWrite={false} />
+      <meshBasicMaterial
+        transparent
+        opacity={0}
+        depthTest={false}
+        depthWrite={false}
+      />
     </mesh>
   );
 }
 
 export function SelectionFrame({
-  name = 'selection:frame',
+  name = "selection:frame",
   width,
   height,
   padding = 28,
@@ -48,16 +53,28 @@ export function SelectionFrame({
 
   return (
     <group name={name} position={[0, 0, 0.04]}>
-      <lineSegments name={`${name}:outline`} renderOrder={selectionRenderOrder} raycast={() => null}>
-        <edgesGeometry args={[new THREE.PlaneGeometry(paddedWidth, paddedHeight)]} />
-        <lineBasicMaterial color={selectionGreen} transparent opacity={1} depthTest={false} depthWrite={false} />
+      <lineSegments
+        name={`${name}:outline`}
+        renderOrder={selectionRenderOrder}
+        raycast={() => undefined}
+      >
+        <edgesGeometry
+          args={[new THREE.PlaneGeometry(paddedWidth, paddedHeight)]}
+        />
+        <lineBasicMaterial
+          color={selectionGreen}
+          transparent
+          opacity={1}
+          depthTest={false}
+          depthWrite={false}
+        />
       </lineSegments>
     </group>
   );
 }
 
 export function MarqueeFrame({
-  name = 'selection:marquee',
+  name = "selection:marquee",
   bounds,
 }: {
   name?: string;
@@ -67,18 +84,35 @@ export function MarqueeFrame({
     <group name={name} position={[bounds.centerX, bounds.centerY, 0.12]}>
       <mesh name={`${name}:fill`} renderOrder={selectionRenderOrder + 2}>
         <planeGeometry args={[bounds.width, bounds.height]} />
-        <meshBasicMaterial color="#2a63ff" transparent opacity={0.08} depthTest={false} depthWrite={false} />
+        <meshBasicMaterial
+          color="#2a63ff"
+          transparent
+          opacity={0.08}
+          depthTest={false}
+          depthWrite={false}
+        />
       </mesh>
-      <lineSegments name={`${name}:border`} renderOrder={selectionRenderOrder + 3}>
-        <edgesGeometry args={[new THREE.PlaneGeometry(bounds.width, bounds.height)]} />
-        <lineBasicMaterial color="#2a63ff" transparent opacity={1} depthTest={false} depthWrite={false} />
+      <lineSegments
+        name={`${name}:border`}
+        renderOrder={selectionRenderOrder + 3}
+      >
+        <edgesGeometry
+          args={[new THREE.PlaneGeometry(bounds.width, bounds.height)]}
+        />
+        <lineBasicMaterial
+          color="#2a63ff"
+          transparent
+          opacity={1}
+          depthTest={false}
+          depthWrite={false}
+        />
       </lineSegments>
     </group>
   );
 }
 
 export function ResizeHandleMarker({
-  name = 'selection:resize-handle:se',
+  name = "selection:resize-handle:se",
   width,
   height,
   offset = 14,
@@ -107,14 +141,42 @@ export function ResizeHandleMarker({
   return (
     <group name={name} position={[0, 0, 0.08]}>
       {handlePositions.map(([x, y], index) => (
-        <group key={`${name}:handle:${index}`} name={`${name}:handle:${index}`} position={[x, y, 0]}>
-          <mesh name={`${name}:handle:${index}:fill`} position={[0, 0, 0.01]} renderOrder={selectionRenderOrder + 2} raycast={() => null}>
+        <group
+          key={`${name}:handle:${index}`}
+          name={`${name}:handle:${index}`}
+          position={[x, y, 0]}
+        >
+          <mesh
+            name={`${name}:handle:${index}:fill`}
+            position={[0, 0, 0.01]}
+            renderOrder={selectionRenderOrder + 2}
+            raycast={() => undefined}
+          >
             <planeGeometry args={[visualSize, visualSize]} />
-            <meshBasicMaterial color="#ffffff" transparent opacity={1} depthTest={false} depthWrite={false} />
+            <meshBasicMaterial
+              color="#ffffff"
+              transparent
+              opacity={1}
+              depthTest={false}
+              depthWrite={false}
+            />
           </mesh>
-          <lineSegments name={`${name}:handle:${index}:border`} position={[0, 0, 0.02]} renderOrder={selectionRenderOrder + 3} raycast={() => null}>
-            <edgesGeometry args={[new THREE.PlaneGeometry(visualSize, visualSize)]} />
-            <lineBasicMaterial color={selectionGreen} transparent opacity={1} depthTest={false} depthWrite={false} />
+          <lineSegments
+            name={`${name}:handle:${index}:border`}
+            position={[0, 0, 0.02]}
+            renderOrder={selectionRenderOrder + 3}
+            raycast={() => undefined}
+          >
+            <edgesGeometry
+              args={[new THREE.PlaneGeometry(visualSize, visualSize)]}
+            />
+            <lineBasicMaterial
+              color={selectionGreen}
+              transparent
+              opacity={1}
+              depthTest={false}
+              depthWrite={false}
+            />
           </lineSegments>
         </group>
       ))}
@@ -123,7 +185,7 @@ export function ResizeHandleMarker({
 }
 
 export function RotationHandleMarker({
-  name = 'selection:rotation-handle',
+  name = "selection:rotation-handle",
   height,
   offset = 14,
   distance = 26,
@@ -140,17 +202,50 @@ export function RotationHandleMarker({
 
   return (
     <group name={name} position={[0, 0, 0.09]}>
-      <mesh name={`${name}:stem`} position={[0, topY - distance / 2, 0]} renderOrder={selectionRenderOrder + 2} raycast={() => null}>
+      <mesh
+        name={`${name}:stem`}
+        position={[0, topY - distance / 2, 0]}
+        renderOrder={selectionRenderOrder + 2}
+        raycast={() => undefined}
+      >
         <planeGeometry args={[1, distance]} />
-        <meshBasicMaterial color={selectionGreen} transparent opacity={1} depthTest={false} depthWrite={false} />
+        <meshBasicMaterial
+          color={selectionGreen}
+          transparent
+          opacity={1}
+          depthTest={false}
+          depthWrite={false}
+        />
       </mesh>
-      <mesh name={`${name}:fill`} position={[0, handleY, 0.01]} renderOrder={selectionRenderOrder + 3} raycast={() => null}>
+      <mesh
+        name={`${name}:fill`}
+        position={[0, handleY, 0.01]}
+        renderOrder={selectionRenderOrder + 3}
+        raycast={() => undefined}
+      >
         <circleGeometry args={[handleSize / 2, 24]} />
-        <meshBasicMaterial color="#ffffff" transparent opacity={1} depthTest={false} depthWrite={false} />
+        <meshBasicMaterial
+          color="#ffffff"
+          transparent
+          opacity={1}
+          depthTest={false}
+          depthWrite={false}
+        />
       </mesh>
-      <lineSegments name={`${name}:border`} position={[0, handleY, 0.02]} renderOrder={selectionRenderOrder + 4} raycast={() => null}>
+      <lineSegments
+        name={`${name}:border`}
+        position={[0, handleY, 0.02]}
+        renderOrder={selectionRenderOrder + 4}
+        raycast={() => undefined}
+      >
         <edgesGeometry args={[new THREE.CircleGeometry(handleSize / 2, 24)]} />
-        <lineBasicMaterial color={selectionGreen} transparent opacity={1} depthTest={false} depthWrite={false} />
+        <lineBasicMaterial
+          color={selectionGreen}
+          transparent
+          opacity={1}
+          depthTest={false}
+          depthWrite={false}
+        />
       </lineSegments>
     </group>
   );

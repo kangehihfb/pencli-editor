@@ -1,6 +1,6 @@
-import exam1Image from '../assets/exams/exam_1.png';
-import exam2Image from '../assets/exams/exam_2.png';
-import exam3Image from '../assets/exams/exam_3.png';
+import exam1Image from "../assets/exams/exam_1.png";
+import exam2Image from "../assets/exams/exam_2.png";
+import exam3Image from "../assets/exams/exam_3.png";
 
 export type ExamPreset = {
   id: string;
@@ -10,18 +10,18 @@ export type ExamPreset = {
 
 export const examPresets: ExamPreset[] = [
   {
-    id: 'exam_1',
-    label: 'exam_1',
+    id: "exam_1",
+    label: "exam_1",
     imageSrc: exam1Image,
   },
   {
-    id: 'exam_2',
-    label: 'exam_2',
+    id: "exam_2",
+    label: "exam_2",
     imageSrc: exam2Image,
   },
   {
-    id: 'exam_3',
-    label: 'exam_3',
+    id: "exam_3",
+    label: "exam_3",
     imageSrc: exam3Image,
   },
 ];
