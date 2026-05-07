@@ -16,6 +16,7 @@ type CommitStrokeInput = {
   color: string;
   size: number;
   layer: number;
+  rotation?: number;
   points: Point2D[];
 };
 
@@ -164,6 +165,7 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
           points: stroke.points,
           color: stroke.color,
           size: stroke.size,
+          rotation: stroke.rotation,
           layer: stroke.layer,
           pageId: configuration.pageId,
           actorId: configuration.actorId,
