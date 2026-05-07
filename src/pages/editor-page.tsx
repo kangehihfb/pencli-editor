@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { RefObject } from "react";
 import type { Stroke, WebGLObject } from "../types/editor";
 import { ExamPresentation } from "../components/exam/ExamPresentation";
@@ -7,6 +7,7 @@ import { EditorStage } from "../components/editor/EditorStage";
 import { EditorToolbar } from "../components/editor/EditorToolbar";
 import { reactExams } from "../data/reactExams";
 import useEditorState from "../hooks/useEditorState";
+import useRealtimeInk from "../hooks/useRealtimeInk";
 import { PAGE_BOUNDS } from "../lib/pageGeometry";
 
 type ClampRange = {
@@ -18,13 +19,39 @@ function clamp(value: number, range: ClampRange): number {
   return Math.min(Math.max(value, range.min), range.max);
 }
 
+function formatDebugTime(timestamp: number | undefined): string {
+  if (timestamp === undefined) return "-";
+  return new Date(timestamp).toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 function EditorPage(): JSX.Element {
   const editor = useEditorState(PAGE_BOUNDS);
+  const realtimeInk = useRealtimeInk();
   const [pageZoom, setPageZoom] = useState(1);
   const [comparisonExportRequestId, setComparisonExportRequestId] = useState(0);
   const activeReactExam =
     reactExams.find((exam) => exam.id === editor.activeExamPresetId) ??
     reactExams[0];
+  const visibleStrokes = useMemo(
+    () =>
+      realtimeInk.enabled
+        ? [
+            ...editor.strokes,
+            ...realtimeInk.remoteFinalStrokes,
+            ...realtimeInk.remoteStrokes,
+          ]
+        : editor.strokes,
+    [
+      editor.strokes,
+      realtimeInk.enabled,
+      realtimeInk.remoteFinalStrokes,
+      realtimeInk.remoteStrokes,
+    ],
+  );
   const handleToolChange = (nextTool: typeof editor.tool): void => {
     if (editor.editingText) {
       editor.commitTextEdit();
@@ -40,6 +67,27 @@ function EditorPage(): JSX.Element {
       editor.setGroupSelection([]);
     }
   };
+  const handleBeginStroke = useCallback(
+    (point: Parameters<typeof editor.beginStroke>[0]) => {
+      editor.beginStroke(point);
+      realtimeInk.beginStroke(point, {
+        color: editor.penColor,
+        size: editor.penSize,
+      });
+    },
+    [editor, realtimeInk],
+  );
+  const handleAppendStrokePoint = useCallback(
+    (pointOrPoints: Parameters<typeof editor.appendStrokePoint>[0]) => {
+      editor.appendStrokePoint(pointOrPoints);
+      realtimeInk.appendStrokePoints(pointOrPoints);
+    },
+    [editor, realtimeInk],
+  );
+  const handleEndStroke = useCallback(() => {
+    editor.endStroke();
+    realtimeInk.endStroke();
+  }, [editor, realtimeInk]);
 
   return (
     <main className="whiteboard-shell">
@@ -79,10 +127,49 @@ function EditorPage(): JSX.Element {
         canRedo={editor.canRedo}
       />
 
+      {realtimeInk.enabled ? (
+        <details className="realtime-ink-status" open>
+          <summary aria-label="Realtime Ink debug status">
+            <strong>Ink</strong>
+            <span>{realtimeInk.status}</span>
+          </summary>
+          <dl>
+            <div>
+              <dt>draft</dt>
+              <dd>{realtimeInk.remoteStrokes.length}</dd>
+            </div>
+            <div>
+              <dt>y strokes</dt>
+              <dd>{realtimeInk.yjsDebug.strokeCount}</dd>
+            </div>
+            <div>
+              <dt>y remote</dt>
+              <dd>{realtimeInk.yjsDebug.remoteStrokeCount}</dd>
+            </div>
+            <div>
+              <dt>y updates</dt>
+              <dd>
+                {realtimeInk.yjsDebug.sentUpdateCount}/
+                {realtimeInk.yjsDebug.appliedUpdateCount}
+              </dd>
+            </div>
+            <div>
+              <dt>last L/R</dt>
+              <dd>
+                {formatDebugTime(realtimeInk.yjsDebug.lastLocalUpdateAt)} /{" "}
+                {formatDebugTime(realtimeInk.yjsDebug.lastRemoteUpdateAt)}
+              </dd>
+            </div>
+          </dl>
+          <small>{`${realtimeInk.actorRole} / ${realtimeInk.actorId}`}</small>
+          <small>{realtimeInk.roomId}</small>
+        </details>
+      ) : null}
+
       <EditorStage
         tool={editor.tool}
         readonly={editor.readonly}
-        strokes={editor.strokes}
+        strokes={visibleStrokes}
         objects={editor.objects}
         activeStrokeId={editor.activeStrokeId as string | undefined}
         selection={editor.selection}
@@ -104,9 +191,9 @@ function EditorPage(): JSX.Element {
         onDragStateChange={editor.setDragState}
         onResizeStateChange={editor.setResizeState}
         onRotateStateChange={editor.setRotateState}
-        onBeginStroke={editor.beginStroke}
-        onAppendStrokePoint={editor.appendStrokePoint}
-        onEndStroke={editor.endStroke}
+        onBeginStroke={handleBeginStroke}
+        onAppendStrokePoint={handleAppendStrokePoint}
+        onEndStroke={handleEndStroke}
         onMoveStroke={editor.moveStroke}
         onMoveObject={editor.moveObject}
         onMoveGroup={editor.moveGroup}

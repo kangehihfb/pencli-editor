@@ -1591,3 +1591,94 @@ button {
     height: 54px;
   }
 }
+
+.realtime-ink-status {
+  position: fixed;
+  right: 18px;
+  top: 50%;
+  z-index: 30;
+  display: grid;
+  gap: 8px;
+  width: 236px;
+  padding: 12px;
+  border: 1px solid rgba(22, 40, 48, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 24px rgba(20, 31, 38, 0.14);
+  color: #1b2d34;
+  font-size: 12px;
+  line-height: 1.35;
+  transform: translateY(-50%);
+}
+
+.realtime-ink-status:not([open]) {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.realtime-ink-status summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 136px;
+  padding: 7px 9px;
+  border: 1px solid rgba(22, 40, 48, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 18px rgba(20, 31, 38, 0.12);
+  cursor: pointer;
+  list-style: none;
+}
+
+.realtime-ink-status summary::-webkit-details-marker {
+  display: none;
+}
+
+.realtime-ink-status summary strong {
+  font-size: 12px;
+}
+
+.realtime-ink-status summary span {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #e3f5ed;
+  color: #177245;
+  font-weight: 700;
+}
+
+.realtime-ink-status dl {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.realtime-ink-status dl div {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.realtime-ink-status dt {
+  color: #60717a;
+  font-weight: 600;
+}
+
+.realtime-ink-status dd {
+  margin: 0;
+  color: #177245;
+  font-weight: 800;
+  text-align: right;
+}
+
+.realtime-ink-status small {
+  overflow: hidden;
+  color: #60717a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
