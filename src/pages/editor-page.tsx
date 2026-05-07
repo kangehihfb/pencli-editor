@@ -154,11 +154,23 @@ function EditorPage(): JSX.Element {
               </dd>
             </div>
             <div>
+              <dt>sync R/S/A</dt>
+              <dd>
+                {realtimeInk.yjsDebug.syncRequestCount}/
+                {realtimeInk.yjsDebug.syncResponseCount}/
+                {realtimeInk.yjsDebug.syncAppliedCount}
+              </dd>
+            </div>
+            <div>
               <dt>last L/R</dt>
               <dd>
                 {formatDebugTime(realtimeInk.yjsDebug.lastLocalUpdateAt)} /{" "}
                 {formatDebugTime(realtimeInk.yjsDebug.lastRemoteUpdateAt)}
               </dd>
+            </div>
+            <div>
+              <dt>last sync</dt>
+              <dd>{formatDebugTime(realtimeInk.yjsDebug.lastSyncAt)}</dd>
             </div>
           </dl>
           <small>{`${realtimeInk.actorRole} / ${realtimeInk.actorId}`}</small>

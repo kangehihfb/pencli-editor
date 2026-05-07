@@ -42,8 +42,12 @@ type RealtimeInkYjsDebug = {
   remoteUpdateCount: number;
   sentUpdateCount: number;
   appliedUpdateCount: number;
+  syncRequestCount: number;
+  syncResponseCount: number;
+  syncAppliedCount: number;
   lastLocalUpdateAt: number | undefined;
   lastRemoteUpdateAt: number | undefined;
+  lastSyncAt: number | undefined;
 };
 
 type RealtimeInkMessage =
@@ -95,11 +99,32 @@ type RealtimeInkMessage =
       pageId: string;
       actorId: string;
       update: number[];
+    }
+  | {
+      protocol: "pentest-ink";
+      version: 1;
+      type: "yjs:sync-request";
+      roomId: string;
+      pageId: string;
+      actorId: string;
+      requestId: string;
+    }
+  | {
+      protocol: "pentest-ink";
+      version: 1;
+      type: "yjs:sync-response";
+      roomId: string;
+      pageId: string;
+      actorId: string;
+      targetActorId: string;
+      requestId: string;
+      update: number[];
     };
 
 const protocolName = "pentest-ink";
 const socketPath = "/handwriting/socket.io/";
 const batchIntervalMs = 50;
+const syncRequestDelayMs = 250;
 const defaultInkServerUrl = "http://localhost:3000";
 const defaultRoomId = "pentest-ink-local-room";
 const defaultPageId = "page-1";
@@ -115,8 +140,12 @@ const initialYjsDebug: RealtimeInkYjsDebug = {
   remoteUpdateCount: 0,
   sentUpdateCount: 0,
   appliedUpdateCount: 0,
+  syncRequestCount: 0,
+  syncResponseCount: 0,
+  syncAppliedCount: 0,
   lastLocalUpdateAt: undefined,
   lastRemoteUpdateAt: undefined,
+  lastSyncAt: undefined,
 };
 
 function makeRealtimeId(prefix: string): string {
@@ -230,6 +259,7 @@ export function useRealtimeInk() {
   >();
   const pendingPointsReference = useRef<Point2D[]>([]);
   const flushTimerReference = useRef<number | undefined>();
+  const syncRequestTimerReference = useRef<number | undefined>();
   const [status, setStatus] = useState<RealtimeInkStatus>(
     configuration.enabled ? "connecting" : "disabled",
   );
@@ -368,6 +398,32 @@ export function useRealtimeInk() {
     );
   }, [flushPendingPoints]);
 
+  const requestYjsSync = useCallback(() => {
+    if (!configuration.enabled) return;
+
+    emitMessage("server-broadcast", {
+      protocol: protocolName,
+      version: 1,
+      type: "yjs:sync-request",
+      roomId: configuration.roomId,
+      pageId: configuration.pageId,
+      actorId: configuration.actorId,
+      requestId: makeRealtimeId("sync_request"),
+    });
+
+    setYjsDebug((previous) => ({
+      ...previous,
+      syncRequestCount: previous.syncRequestCount + 1,
+      lastSyncAt: Date.now(),
+    }));
+  }, [
+    configuration.actorId,
+    configuration.enabled,
+    configuration.pageId,
+    configuration.roomId,
+    emitMessage,
+  ]);
+
   useEffect(() => {
     if (!configuration.enabled) return undefined;
     if (!configuration.token) {
@@ -390,6 +446,13 @@ export function useRealtimeInk() {
     socket.on("connect", () => {
       setStatus("connected");
       socket.emit("join-room", configuration.roomId);
+      if (syncRequestTimerReference.current !== undefined) {
+        window.clearTimeout(syncRequestTimerReference.current);
+      }
+      syncRequestTimerReference.current = window.setTimeout(() => {
+        syncRequestTimerReference.current = undefined;
+        requestYjsSync();
+      }, syncRequestDelayMs);
     });
 
     socket.on("disconnect", () => {
@@ -406,6 +469,49 @@ export function useRealtimeInk() {
       if (message.roomId !== configuration.roomId) return;
       if (message.pageId !== configuration.pageId) return;
       if (message.actorId === configuration.actorId) return;
+
+      if (message.type === "yjs:sync-request") {
+        const ydoc = ydocReference.current;
+        if (!ydoc) return;
+
+        emitMessage("server-broadcast", {
+          protocol: protocolName,
+          version: 1,
+          type: "yjs:sync-response",
+          roomId: configuration.roomId,
+          pageId: configuration.pageId,
+          actorId: configuration.actorId,
+          targetActorId: message.actorId,
+          requestId: message.requestId,
+          update: Array.from(Y.encodeStateAsUpdate(ydoc)),
+        });
+
+        setYjsDebug((previous) => ({
+          ...previous,
+          syncResponseCount: previous.syncResponseCount + 1,
+          lastSyncAt: Date.now(),
+        }));
+        return;
+      }
+
+      if (message.type === "yjs:sync-response") {
+        if (message.targetActorId !== configuration.actorId) return;
+
+        const ydoc = ydocReference.current;
+        if (!ydoc) return;
+
+        Y.applyUpdate(ydoc, new Uint8Array(message.update), remoteYjsOrigin);
+        setYjsDebug((previous) => ({
+          ...previous,
+          remoteUpdateCount: previous.remoteUpdateCount + 1,
+          appliedUpdateCount: previous.appliedUpdateCount + 1,
+          syncAppliedCount: previous.syncAppliedCount + 1,
+          lastRemoteUpdateAt: Date.now(),
+          lastSyncAt: Date.now(),
+        }));
+        refreshYjsStrokes();
+        return;
+      }
 
       if (message.type === "yjs:update") {
         const ydoc = ydocReference.current;
@@ -479,11 +585,15 @@ export function useRealtimeInk() {
     });
 
     return () => {
+      if (syncRequestTimerReference.current !== undefined) {
+        window.clearTimeout(syncRequestTimerReference.current);
+        syncRequestTimerReference.current = undefined;
+      }
       socket.removeAllListeners();
       socket.disconnect();
       socketReference.current = undefined;
     };
-  }, [configuration]);
+  }, [configuration, emitMessage, refreshYjsStrokes, requestYjsSync]);
 
   useEffect(
     () => () => {
