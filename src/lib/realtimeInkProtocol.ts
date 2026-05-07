@@ -136,7 +136,8 @@ export const localYjsOrigin = "pentest-ink-local-yjs";
 export const remoteYjsOrigin = "pentest-ink-remote-yjs";
 
 const defaultInkServerUrl = "http://localhost:3000";
-const defaultRoomId = "pentest-ink-local-room";
+const defaultActivityId = "local-activity";
+const defaultQuestionId = "question-1";
 const defaultPageId = "page-1";
 const defaultRole: RealtimeInkRole = "student";
 
@@ -172,12 +173,18 @@ export function readRealtimeInkConfiguration(): RealtimeInkConfiguration {
     parameters.get("realtimeInk") === "true";
   const actorRole =
     parameters.get("inkRole") === "teacher" ? "teacher" : defaultRole;
+  const activityId = parameters.get("inkActivity") ?? defaultActivityId;
+  const questionId = parameters.get("inkQuestion") ?? defaultQuestionId;
+  const pageId = parameters.get("inkPage") ?? defaultPageId;
+  const roomId =
+    parameters.get("inkRoom") ??
+    `activity:${activityId}:question:${questionId}:page:${pageId}`;
 
   return {
     enabled,
     serverUrl: parameters.get("inkServer") ?? defaultInkServerUrl,
-    roomId: parameters.get("inkRoom") ?? defaultRoomId,
-    pageId: parameters.get("inkPage") ?? defaultPageId,
+    roomId,
+    pageId,
     token: parameters.get("inkToken") ?? "",
     actorId: parameters.get("inkActor") ?? getOrCreateSessionActorId(),
     actorRole,
