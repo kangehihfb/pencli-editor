@@ -47,6 +47,12 @@ export function RealtimeInkDebugPanel(
           <dd>{yjsDebug.remoteStrokeCount}</dd>
         </div>
         <div>
+          <dt>objects</dt>
+          <dd>
+            {yjsDebug.objectCount}/{yjsDebug.remoteObjectCount}
+          </dd>
+        </div>
+        <div>
           <dt>y updates</dt>
           <dd>
             {yjsDebug.sentUpdateCount}/{yjsDebug.appliedUpdateCount}

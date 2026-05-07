@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { Stroke, WebGLObject } from "../types/editor";
 import { ExamPresentation } from "../components/exam/ExamPresentation";
@@ -44,6 +44,41 @@ function EditorPage(): JSX.Element {
       realtimeInk.remoteStrokes,
     ],
   );
+  const visibleObjects = useMemo(
+    () =>
+      realtimeInk.enabled
+        ? [...editor.objects, ...realtimeInk.remoteObjects]
+        : editor.objects,
+    [editor.objects, realtimeInk.enabled, realtimeInk.remoteObjects],
+  );
+  const localRealtimeObjectIdsRef = useRef<Set<string>>(new Set());
+  const committedObjectSnapshotsRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (!realtimeInk.enabled || editor.objects.length === 0) return;
+
+    const nextObjects = editor.objects.filter((object) => {
+      if (!localRealtimeObjectIdsRef.current.has(object.id)) return false;
+      const nextSnapshot = JSON.stringify(object);
+      if (committedObjectSnapshotsRef.current.get(object.id) === nextSnapshot) {
+        return false;
+      }
+      committedObjectSnapshotsRef.current.set(object.id, nextSnapshot);
+      return true;
+    });
+
+    if (nextObjects.length > 0) {
+      realtimeInk.commitObjects(nextObjects);
+    }
+  }, [editor.objects, realtimeInk]);
+
+  const handleAddText = useCallback(() => {
+    const object = editor.addText();
+    if (!object) return;
+    localRealtimeObjectIdsRef.current.add(object.id);
+    committedObjectSnapshotsRef.current.set(object.id, JSON.stringify(object));
+    realtimeInk.commitObjects([object]);
+  }, [editor, realtimeInk]);
   const handleToolChange = (nextTool: typeof editor.tool): void => {
     if (editor.editingText) {
       editor.commitTextEdit();
@@ -96,7 +131,7 @@ function EditorPage(): JSX.Element {
         onTextFontFamilyChange={editor.applyTextFontFamily}
         onTextFontSizeChange={editor.applyTextFontSize}
         onPenSizeChange={editor.setPenSize}
-        onAddText={editor.addText}
+        onAddText={handleAddText}
         onAddImage={editor.addImage}
         onImageFileChange={editor.addImageFromFile}
         onExportComparisonImages={() =>
@@ -134,7 +169,7 @@ function EditorPage(): JSX.Element {
         tool={editor.tool}
         readonly={editor.readonly}
         strokes={visibleStrokes}
-        objects={editor.objects}
+        objects={visibleObjects}
         activeStrokeId={editor.activeStrokeId as string | undefined}
         selection={editor.selection}
         groupSelection={editor.groupSelection}

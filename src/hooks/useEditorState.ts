@@ -752,8 +752,8 @@ function useEditorState(drawingBoundsOverride?: PointBounds) {
     setHistoryRevision((value) => value + 1);
   }, [createHistorySnapshot, restoreHistorySnapshot]);
 
-  const addText = (): void => {
-    if (readonly) return;
+  const addText = (): WebGLObject | undefined => {
+    if (readonly) return undefined;
     recordHistory();
     const object = createInsertedTextObject({
       textFontFamily,
@@ -767,6 +767,7 @@ function useEditorState(drawingBoundsOverride?: PointBounds) {
     setGroupSelection([{ type: "object", id: object.id }]);
     setEditingText({ id: object.id, value: "" });
     setTool("select");
+    return object;
   };
 
   const addImage = (): void => {

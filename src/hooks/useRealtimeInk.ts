@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
-import type { Point2D, Stroke } from "../types/editor";
+import type { Point2D, Stroke, WebGLObject } from "../types/editor";
 import useRealtimeInkDocument from "./useRealtimeInkDocument";
 import {
   appendUniquePoints,
@@ -40,6 +40,7 @@ export function useRealtimeInk() {
     configuration.enabled ? "connecting" : "disabled",
   );
   const [remoteStrokes, setRemoteStrokes] = useState<Stroke[]>([]);
+  const [remoteObjects, setRemoteObjects] = useState<WebGLObject[]>([]);
 
   const emitMessage = useCallback(
     (
@@ -87,11 +88,16 @@ export function useRealtimeInk() {
     );
   }, []);
 
+  const handleRemoteObjectsChange = useCallback((objects: WebGLObject[]) => {
+    setRemoteObjects(objects);
+  }, []);
+
   const {
     yjsStrokes,
     yjsDebug,
     applyRemoteUpdate,
     commitStroke,
+    commitObjects,
     encodeCurrentState,
     markSyncRequested,
     markSyncResponded,
@@ -100,6 +106,7 @@ export function useRealtimeInk() {
     enabled: configuration.enabled,
     onLocalUpdate: handleLocalYjsUpdate,
     onRemoteFinalStrokesChange: handleRemoteFinalStrokesChange,
+    onRemoteObjectsChange: handleRemoteObjectsChange,
   });
 
   const flushPendingPoints = useCallback(() => {
@@ -424,10 +431,12 @@ export function useRealtimeInk() {
     status,
     remoteStrokes,
     remoteFinalStrokes,
+    remoteObjects,
     yjsDebug,
     beginStroke,
     appendStrokePoints,
     endStroke,
+    commitObjects,
   };
 }
 

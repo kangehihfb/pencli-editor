@@ -1,4 +1,4 @@
-import type { Point2D, Stroke } from "../types/editor";
+import type { Point2D, Stroke, WebGLObject } from "../types/editor";
 
 export type RealtimeInkStatus =
   | "disabled"
@@ -32,9 +32,18 @@ export type CollaborativeStroke = Stroke & {
   createdAt: number;
 };
 
+export type CollaborativeObject = WebGLObject & {
+  pageId: string;
+  actorId: string;
+  actorRole: RealtimeInkRole;
+  updatedAt: number;
+};
+
 export type RealtimeInkYjsDebug = {
   strokeCount: number;
   remoteStrokeCount: number;
+  objectCount: number;
+  remoteObjectCount: number;
   localUpdateCount: number;
   remoteUpdateCount: number;
   sentUpdateCount: number;
@@ -134,6 +143,8 @@ const defaultRole: RealtimeInkRole = "student";
 export const initialYjsDebug: RealtimeInkYjsDebug = {
   strokeCount: 0,
   remoteStrokeCount: 0,
+  objectCount: 0,
+  remoteObjectCount: 0,
   localUpdateCount: 0,
   remoteUpdateCount: 0,
   sentUpdateCount: 0,

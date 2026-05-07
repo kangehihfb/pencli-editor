@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
-import type { Point2D, Stroke } from "../types/editor";
+import type { Point2D, Stroke, WebGLObject } from "../types/editor";
 import {
   initialYjsDebug,
   localYjsOrigin,
   remoteYjsOrigin,
+  type CollaborativeObject,
   type CollaborativeStroke,
   type RealtimeInkConfiguration,
   type RealtimeInkYjsDebug,
@@ -23,14 +24,22 @@ type UseRealtimeInkDocumentInput = {
   enabled: boolean;
   onLocalUpdate: (update: Uint8Array) => void;
   onRemoteFinalStrokesChange: (strokes: CollaborativeStroke[]) => void;
+  onRemoteObjectsChange: (objects: CollaborativeObject[]) => void;
 };
 
 export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
-  const { configuration, enabled, onLocalUpdate, onRemoteFinalStrokesChange } =
-    input;
+  const {
+    configuration,
+    enabled,
+    onLocalUpdate,
+    onRemoteFinalStrokesChange,
+    onRemoteObjectsChange,
+  } = input;
   const ydocReference = useRef<Y.Doc | undefined>();
   const yStrokesReference = useRef<Y.Map<CollaborativeStroke> | undefined>();
+  const yObjectsReference = useRef<Y.Map<CollaborativeObject> | undefined>();
   const [yjsStrokes, setYjsStrokes] = useState<CollaborativeStroke[]>([]);
+  const [yjsObjects, setYjsObjects] = useState<CollaborativeObject[]>([]);
   const [yjsDebug, setYjsDebug] =
     useState<RealtimeInkYjsDebug>(initialYjsDebug);
 
@@ -58,13 +67,35 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
     onRemoteFinalStrokesChange,
   ]);
 
+  const refreshYjsObjects = useCallback(() => {
+    const yObjects = yObjectsReference.current;
+    if (!yObjects) return;
+
+    const nextObjects = Array.from(yObjects.values()).filter(
+      (object) => object.pageId === configuration.pageId,
+    );
+    const remoteObjects = nextObjects.filter(
+      (object) => object.actorId !== configuration.actorId,
+    );
+
+    setYjsObjects(nextObjects);
+    setYjsDebug((previous) => ({
+      ...previous,
+      objectCount: nextObjects.length,
+      remoteObjectCount: remoteObjects.length,
+    }));
+    onRemoteObjectsChange(remoteObjects);
+  }, [configuration.actorId, configuration.pageId, onRemoteObjectsChange]);
+
   useEffect(() => {
     if (!enabled) return undefined;
 
     const ydoc = new Y.Doc();
     const yStrokes = ydoc.getMap<CollaborativeStroke>("strokes");
+    const yObjects = ydoc.getMap<CollaborativeObject>("objects");
     ydocReference.current = ydoc;
     yStrokesReference.current = yStrokes;
+    yObjectsReference.current = yObjects;
 
     const handleYjsUpdate = (update: Uint8Array, origin: unknown): void => {
       if (origin === remoteYjsOrigin) return;
@@ -80,18 +111,23 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
 
     ydoc.on("update", handleYjsUpdate);
     yStrokes.observe(refreshYjsStrokes);
+    yObjects.observe(refreshYjsObjects);
     refreshYjsStrokes();
+    refreshYjsObjects();
 
     return () => {
       yStrokes.unobserve(refreshYjsStrokes);
+      yObjects.unobserve(refreshYjsObjects);
       ydoc.off("update", handleYjsUpdate);
       ydoc.destroy();
       ydocReference.current = undefined;
       yStrokesReference.current = undefined;
+      yObjectsReference.current = undefined;
       setYjsStrokes([]);
+      setYjsObjects([]);
       setYjsDebug(initialYjsDebug);
     };
-  }, [enabled, onLocalUpdate, refreshYjsStrokes]);
+  }, [enabled, onLocalUpdate, refreshYjsObjects, refreshYjsStrokes]);
 
   const applyRemoteUpdate = useCallback(
     (update: number[], options?: { sync?: boolean }) => {
@@ -110,8 +146,9 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
         lastSyncAt: options?.sync ? Date.now() : previous.lastSyncAt,
       }));
       refreshYjsStrokes();
+      refreshYjsObjects();
     },
-    [refreshYjsStrokes],
+    [refreshYjsObjects, refreshYjsStrokes],
   );
 
   const commitStroke = useCallback(
@@ -144,6 +181,33 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
     ],
   );
 
+  const commitObjects = useCallback(
+    (objects: WebGLObject[]) => {
+      const ydoc = ydocReference.current;
+      const yObjects = yObjectsReference.current;
+      if (!ydoc || !yObjects) return;
+
+      ydoc.transact(() => {
+        for (const object of objects) {
+          yObjects.set(object.id, {
+            ...object,
+            pageId: configuration.pageId,
+            actorId: configuration.actorId,
+            actorRole: configuration.actorRole,
+            updatedAt: Date.now(),
+          });
+        }
+      }, localYjsOrigin);
+      refreshYjsObjects();
+    },
+    [
+      configuration.actorId,
+      configuration.actorRole,
+      configuration.pageId,
+      refreshYjsObjects,
+    ],
+  );
+
   const encodeCurrentState = useCallback(() => {
     const ydoc = ydocReference.current;
     if (!ydoc) return [];
@@ -168,9 +232,11 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
 
   return {
     yjsStrokes,
+    yjsObjects,
     yjsDebug,
     applyRemoteUpdate,
     commitStroke,
+    commitObjects,
     encodeCurrentState,
     markSyncRequested,
     markSyncResponded,
