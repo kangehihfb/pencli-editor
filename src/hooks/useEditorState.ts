@@ -903,8 +903,8 @@ function useEditorState(drawingBoundsOverride?: PointBounds) {
     };
   }, []);
 
-  const beginStroke = (point: Point2D): void => {
-    if (readonly) return;
+  const beginStroke = (point: Point2D): Stroke | undefined => {
+    if (readonly) return undefined;
     recordHistory();
     const stroke: Stroke = {
       id: makeId("stroke"),
@@ -920,6 +920,7 @@ function useEditorState(drawingBoundsOverride?: PointBounds) {
     activeStrokeIdReference.current = stroke.id;
     setActiveStrokeId(stroke.id);
     setEditingText(undefined);
+    return stroke;
   };
 
   const selectExamPreset = (presetId: string): void => {

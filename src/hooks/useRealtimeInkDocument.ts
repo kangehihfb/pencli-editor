@@ -152,7 +152,7 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
   );
 
   const commitStroke = useCallback(
-    (stroke: CommitStrokeInput) => {
+    (stroke: CommitStrokeInput | Stroke) => {
       const ydoc = ydocReference.current;
       const yStrokes = yStrokesReference.current;
       if (!ydoc || !yStrokes) return;
@@ -179,6 +179,22 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
       configuration.pageId,
       refreshYjsStrokes,
     ],
+  );
+
+  const deleteStrokes = useCallback(
+    (strokeIds: string[]) => {
+      const ydoc = ydocReference.current;
+      const yStrokes = yStrokesReference.current;
+      if (!ydoc || !yStrokes || strokeIds.length === 0) return;
+
+      ydoc.transact(() => {
+        for (const strokeId of strokeIds) {
+          yStrokes.delete(strokeId);
+        }
+      }, localYjsOrigin);
+      refreshYjsStrokes();
+    },
+    [refreshYjsStrokes],
   );
 
   const commitObjects = useCallback(
@@ -252,6 +268,7 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
     yjsDebug,
     applyRemoteUpdate,
     commitStroke,
+    deleteStrokes,
     commitObjects,
     deleteObjects,
     encodeCurrentState,

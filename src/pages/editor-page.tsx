@@ -51,8 +51,43 @@ function EditorPage(): JSX.Element {
         : editor.objects,
     [editor.objects, realtimeInk.enabled, realtimeInk.remoteObjects],
   );
+  const localRealtimeStrokeIdsRef = useRef<Set<string>>(new Set());
+  const committedStrokeSnapshotsRef = useRef<Map<string, string>>(new Map());
+  const activeLocalStrokeIdRef = useRef<string | undefined>();
   const localRealtimeObjectIdsRef = useRef<Set<string>>(new Set());
   const committedObjectSnapshotsRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    if (!realtimeInk.enabled) return;
+
+    const currentStrokeIds = new Set(
+      editor.strokes.map((stroke) => stroke.id),
+    );
+    const deletedStrokeIds = Array.from(
+      localRealtimeStrokeIdsRef.current,
+    ).filter((strokeId) => !currentStrokeIds.has(strokeId));
+    const nextStrokes = editor.strokes.filter((stroke) => {
+      if (!localRealtimeStrokeIdsRef.current.has(stroke.id)) return false;
+      const nextSnapshot = JSON.stringify(stroke);
+      if (committedStrokeSnapshotsRef.current.get(stroke.id) === nextSnapshot) {
+        return false;
+      }
+      committedStrokeSnapshotsRef.current.set(stroke.id, nextSnapshot);
+      return true;
+    });
+
+    if (deletedStrokeIds.length > 0) {
+      realtimeInk.deleteStrokes(deletedStrokeIds);
+      for (const strokeId of deletedStrokeIds) {
+        localRealtimeStrokeIdsRef.current.delete(strokeId);
+        committedStrokeSnapshotsRef.current.delete(strokeId);
+      }
+    }
+
+    for (const stroke of nextStrokes) {
+      realtimeInk.commitStroke(stroke);
+    }
+  }, [editor.strokes, realtimeInk]);
 
   useEffect(() => {
     if (!realtimeInk.enabled) return;
@@ -123,11 +158,14 @@ function EditorPage(): JSX.Element {
   };
   const handleBeginStroke = useCallback(
     (point: Parameters<typeof editor.beginStroke>[0]) => {
-      editor.beginStroke(point);
+      const stroke = editor.beginStroke(point);
+      if (!stroke) return;
+      activeLocalStrokeIdRef.current = stroke.id;
       realtimeInk.beginStroke(point, {
         color: editor.penColor,
         size: editor.penSize,
-      });
+        layer: stroke.layer,
+      }, stroke.id);
     },
     [editor, realtimeInk],
   );
@@ -140,6 +178,11 @@ function EditorPage(): JSX.Element {
   );
   const handleEndStroke = useCallback(() => {
     editor.endStroke();
+    const strokeId = activeLocalStrokeIdRef.current;
+    if (strokeId) {
+      localRealtimeStrokeIdsRef.current.add(strokeId);
+      activeLocalStrokeIdRef.current = undefined;
+    }
     realtimeInk.endStroke();
   }, [editor, realtimeInk]);
 

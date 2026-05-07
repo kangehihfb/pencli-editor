@@ -97,6 +97,7 @@ export function useRealtimeInk() {
     yjsDebug,
     applyRemoteUpdate,
     commitStroke,
+    deleteStrokes,
     commitObjects,
     deleteObjects,
     encodeCurrentState,
@@ -335,13 +336,13 @@ export function useRealtimeInk() {
   );
 
   const beginStroke = useCallback(
-    (point: Point2D, style: StrokeStyle) => {
+    (point: Point2D, style: StrokeStyle, strokeId?: string) => {
       if (!configuration.enabled) return;
 
-      const strokeId = makeRealtimeId("remote_stroke");
+      const nextStrokeId = strokeId ?? makeRealtimeId("remote_stroke");
       const layer = style.layer ?? defaultRemoteLayer;
       activeStrokeReference.current = {
-        id: strokeId,
+        id: nextStrokeId,
         seq: 0,
         color: style.color,
         size: style.size,
@@ -358,7 +359,7 @@ export function useRealtimeInk() {
         pageId: configuration.pageId,
         actorId: configuration.actorId,
         actorRole: configuration.actorRole,
-        strokeId,
+        strokeId: nextStrokeId,
         color: style.color,
         size: style.size,
         layer,
@@ -437,6 +438,8 @@ export function useRealtimeInk() {
     beginStroke,
     appendStrokePoints,
     endStroke,
+    commitStroke,
+    deleteStrokes,
     commitObjects,
     deleteObjects,
   };
