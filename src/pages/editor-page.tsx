@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import type { Stroke, WebGLObject } from "../types/editor";
 import { ExamPresentation } from "../components/exam/ExamPresentation";
 import { EditorDebugPanel } from "../components/editor/debug/EditorDebugPanel";
+import { RealtimeInkDebugPanel } from "../components/editor/debug/RealtimeInkDebugPanel";
 import { EditorStage } from "../components/editor/EditorStage";
 import { EditorToolbar } from "../components/editor/EditorToolbar";
 import { reactExams } from "../data/reactExams";
@@ -17,15 +18,6 @@ type ClampRange = {
 
 function clamp(value: number, range: ClampRange): number {
   return Math.min(Math.max(value, range.min), range.max);
-}
-
-function formatDebugTime(timestamp: number | undefined): string {
-  if (timestamp === undefined) return "-";
-  return new Date(timestamp).toLocaleTimeString("ko-KR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }
 
 function EditorPage(): JSX.Element {
@@ -128,54 +120,14 @@ function EditorPage(): JSX.Element {
       />
 
       {realtimeInk.enabled ? (
-        <details className="realtime-ink-status" open>
-          <summary aria-label="Realtime Ink debug status">
-            <strong>Ink</strong>
-            <span>{realtimeInk.status}</span>
-          </summary>
-          <dl>
-            <div>
-              <dt>draft</dt>
-              <dd>{realtimeInk.remoteStrokes.length}</dd>
-            </div>
-            <div>
-              <dt>y strokes</dt>
-              <dd>{realtimeInk.yjsDebug.strokeCount}</dd>
-            </div>
-            <div>
-              <dt>y remote</dt>
-              <dd>{realtimeInk.yjsDebug.remoteStrokeCount}</dd>
-            </div>
-            <div>
-              <dt>y updates</dt>
-              <dd>
-                {realtimeInk.yjsDebug.sentUpdateCount}/
-                {realtimeInk.yjsDebug.appliedUpdateCount}
-              </dd>
-            </div>
-            <div>
-              <dt>sync R/S/A</dt>
-              <dd>
-                {realtimeInk.yjsDebug.syncRequestCount}/
-                {realtimeInk.yjsDebug.syncResponseCount}/
-                {realtimeInk.yjsDebug.syncAppliedCount}
-              </dd>
-            </div>
-            <div>
-              <dt>last L/R</dt>
-              <dd>
-                {formatDebugTime(realtimeInk.yjsDebug.lastLocalUpdateAt)} /{" "}
-                {formatDebugTime(realtimeInk.yjsDebug.lastRemoteUpdateAt)}
-              </dd>
-            </div>
-            <div>
-              <dt>last sync</dt>
-              <dd>{formatDebugTime(realtimeInk.yjsDebug.lastSyncAt)}</dd>
-            </div>
-          </dl>
-          <small>{`${realtimeInk.actorRole} / ${realtimeInk.actorId}`}</small>
-          <small>{realtimeInk.roomId}</small>
-        </details>
+        <RealtimeInkDebugPanel
+          status={realtimeInk.status}
+          draftCount={realtimeInk.remoteStrokes.length}
+          yjsDebug={realtimeInk.yjsDebug}
+          actorRole={realtimeInk.actorRole}
+          actorId={realtimeInk.actorId}
+          roomId={realtimeInk.roomId}
+        />
       ) : null}
 
       <EditorStage
