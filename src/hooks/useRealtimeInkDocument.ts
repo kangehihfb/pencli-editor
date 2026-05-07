@@ -208,6 +208,22 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
     ],
   );
 
+  const deleteObjects = useCallback(
+    (objectIds: string[]) => {
+      const ydoc = ydocReference.current;
+      const yObjects = yObjectsReference.current;
+      if (!ydoc || !yObjects || objectIds.length === 0) return;
+
+      ydoc.transact(() => {
+        for (const objectId of objectIds) {
+          yObjects.delete(objectId);
+        }
+      }, localYjsOrigin);
+      refreshYjsObjects();
+    },
+    [refreshYjsObjects],
+  );
+
   const encodeCurrentState = useCallback(() => {
     const ydoc = ydocReference.current;
     if (!ydoc) return [];
@@ -237,6 +253,7 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
     applyRemoteUpdate,
     commitStroke,
     commitObjects,
+    deleteObjects,
     encodeCurrentState,
     markSyncRequested,
     markSyncResponded,

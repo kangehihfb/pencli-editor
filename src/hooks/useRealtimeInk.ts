@@ -98,6 +98,7 @@ export function useRealtimeInk() {
     applyRemoteUpdate,
     commitStroke,
     commitObjects,
+    deleteObjects,
     encodeCurrentState,
     markSyncRequested,
     markSyncResponded,
@@ -437,6 +438,7 @@ export function useRealtimeInk() {
     appendStrokePoints,
     endStroke,
     commitObjects,
+    deleteObjects,
   };
 }
 

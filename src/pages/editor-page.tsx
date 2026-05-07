@@ -55,8 +55,14 @@ function EditorPage(): JSX.Element {
   const committedObjectSnapshotsRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
-    if (!realtimeInk.enabled || editor.objects.length === 0) return;
+    if (!realtimeInk.enabled) return;
 
+    const currentObjectIds = new Set(
+      editor.objects.map((object) => object.id),
+    );
+    const deletedObjectIds = Array.from(
+      localRealtimeObjectIdsRef.current,
+    ).filter((objectId) => !currentObjectIds.has(objectId));
     const nextObjects = editor.objects.filter((object) => {
       if (!localRealtimeObjectIdsRef.current.has(object.id)) return false;
       const nextSnapshot = JSON.stringify(object);
@@ -66,6 +72,14 @@ function EditorPage(): JSX.Element {
       committedObjectSnapshotsRef.current.set(object.id, nextSnapshot);
       return true;
     });
+
+    if (deletedObjectIds.length > 0) {
+      realtimeInk.deleteObjects(deletedObjectIds);
+      for (const objectId of deletedObjectIds) {
+        localRealtimeObjectIdsRef.current.delete(objectId);
+        committedObjectSnapshotsRef.current.delete(objectId);
+      }
+    }
 
     if (nextObjects.length > 0) {
       realtimeInk.commitObjects(nextObjects);
