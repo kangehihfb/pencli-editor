@@ -775,15 +775,17 @@ function useEditorState(drawingBoundsOverride?: PointBounds) {
     imageInputReference.current?.click();
   };
 
-  const addImageFromFile = (event: ChangeEvent<HTMLInputElement>): void => {
+  const addImageFromFile = (
+    event: ChangeEvent<HTMLInputElement>,
+    onObjectCreated?: (object: WebGLObject) => void,
+  ): void => {
     if (readonly) return;
     const inputElement = event.currentTarget;
     const file = inputElement.files?.[0];
     inputElement.value = "";
     if (!file) return;
 
-    const imageSource = URL.createObjectURL(file);
-    const addDecodedImage = (aspect: number): void => {
+    const addDecodedImage = (imageSource: string, aspect: number): void => {
       recordHistory();
       const object = createInsertedImageObject({
         fileName: file.name,
@@ -798,17 +800,24 @@ function useEditorState(drawingBoundsOverride?: PointBounds) {
       setGroupSelection([{ type: "object", id: object.id }]);
       setEditingText(undefined);
       setTool("select");
+      onObjectCreated?.(object);
     };
 
-    const image = new Image();
-    image.decoding = "async";
-    image.addEventListener("load", () => {
-      addDecodedImage(image.naturalWidth / image.naturalHeight);
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result !== "string") return;
+
+      const image = new Image();
+      image.decoding = "async";
+      image.addEventListener("load", () => {
+        addDecodedImage(
+          reader.result as string,
+          image.naturalWidth / image.naturalHeight,
+        );
+      });
+      image.src = reader.result;
     });
-    image.addEventListener("error", () => {
-      URL.revokeObjectURL(imageSource);
-    });
-    image.src = imageSource;
+    reader.readAsDataURL(file);
   };
 
   const clearAll = (): void => {

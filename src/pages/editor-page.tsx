@@ -79,6 +79,19 @@ function EditorPage(): JSX.Element {
     committedObjectSnapshotsRef.current.set(object.id, JSON.stringify(object));
     realtimeInk.commitObjects([object]);
   }, [editor, realtimeInk]);
+  const handleImageFileChange = useCallback(
+    (event: Parameters<typeof editor.addImageFromFile>[0]) => {
+      editor.addImageFromFile(event, (object) => {
+        localRealtimeObjectIdsRef.current.add(object.id);
+        committedObjectSnapshotsRef.current.set(
+          object.id,
+          JSON.stringify(object),
+        );
+        realtimeInk.commitObjects([object]);
+      });
+    },
+    [editor, realtimeInk],
+  );
   const handleToolChange = (nextTool: typeof editor.tool): void => {
     if (editor.editingText) {
       editor.commitTextEdit();
@@ -133,7 +146,7 @@ function EditorPage(): JSX.Element {
         onPenSizeChange={editor.setPenSize}
         onAddText={handleAddText}
         onAddImage={editor.addImage}
-        onImageFileChange={editor.addImageFromFile}
+        onImageFileChange={handleImageFileChange}
         onExportComparisonImages={() =>
           setComparisonExportRequestId((value) => value + 1)
         }
