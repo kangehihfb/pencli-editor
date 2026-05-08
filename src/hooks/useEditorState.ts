@@ -49,6 +49,10 @@ type HistorySnapshot = {
   activeExamPresetId: string | undefined;
 };
 
+type UseEditorStateOptions = {
+  sharedMaxLayer?: number;
+};
+
 type ClampRange = {
   min: number;
   max: number;
@@ -606,7 +610,10 @@ function isTextInputTarget(target: EventTarget | undefined): boolean {
   );
 }
 
-function useEditorState(drawingBoundsOverride?: PointBounds) {
+function useEditorState(
+  drawingBoundsOverride?: PointBounds,
+  options?: UseEditorStateOptions,
+) {
   const injectedExportStateReference = useRef<PageExportState | undefined>(
     readInjectedExportState(),
   );
@@ -643,6 +650,7 @@ function useEditorState(drawingBoundsOverride?: PointBounds) {
 
   const maxLayer = Math.max(
     0,
+    options?.sharedMaxLayer ?? 0,
     ...strokes.map((stroke) => stroke.layer),
     ...objects.map((object) => object.layer),
   );
@@ -1494,14 +1502,14 @@ function useEditorState(drawingBoundsOverride?: PointBounds) {
     setStrokes((previous) =>
       previous.map((stroke) =>
         strokeIds.has(stroke.id)
-          ? { ...stroke, layer: 1 }
+          ? { ...stroke, layer: 0 }
           : { ...stroke, layer: stroke.layer + 1 },
       ),
     );
     setObjects((previous) =>
       previous.map((object) => {
         if (object.id === activeExamObjectId) return object;
-        if (objectIds.has(object.id)) return { ...object, layer: 1 };
+        if (objectIds.has(object.id)) return { ...object, layer: 0 };
         return { ...object, layer: object.layer + 1 };
       }),
     );

@@ -94,6 +94,7 @@ export function useRealtimeInk() {
 
   const {
     yjsStrokes,
+    yjsObjects,
     yjsDebug,
     applyRemoteUpdate,
     commitStroke,
@@ -431,6 +432,8 @@ export function useRealtimeInk() {
   return {
     ...configuration,
     status,
+    sharedStrokes: yjsStrokes,
+    sharedObjects: yjsObjects,
     remoteStrokes,
     remoteFinalStrokes,
     remoteObjects,

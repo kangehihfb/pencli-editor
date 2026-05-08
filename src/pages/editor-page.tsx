@@ -21,35 +21,73 @@ function clamp(value: number, range: ClampRange): number {
 }
 
 function EditorPage(): JSX.Element {
-  const editor = useEditorState(PAGE_BOUNDS);
   const realtimeInk = useRealtimeInk();
+  const sharedMaxLayer = useMemo(
+    () =>
+      realtimeInk.enabled
+        ? Math.max(
+            0,
+            ...realtimeInk.sharedStrokes.map((stroke) => stroke.layer),
+            ...realtimeInk.sharedObjects.map((object) => object.layer),
+          )
+        : 0,
+    [
+      realtimeInk.enabled,
+      realtimeInk.sharedObjects,
+      realtimeInk.sharedStrokes,
+    ],
+  );
+  const editor = useEditorState(PAGE_BOUNDS, { sharedMaxLayer });
   const [pageZoom, setPageZoom] = useState(1);
   const [comparisonExportRequestId, setComparisonExportRequestId] = useState(0);
   const activeReactExam =
     reactExams.find((exam) => exam.id === editor.activeExamPresetId) ??
     reactExams[0];
+  const sharedStrokeIds = useMemo(
+    () => new Set(realtimeInk.sharedStrokes.map((stroke) => stroke.id)),
+    [realtimeInk.sharedStrokes],
+  );
+  const sharedObjectIds = useMemo(
+    () => new Set(realtimeInk.sharedObjects.map((object) => object.id)),
+    [realtimeInk.sharedObjects],
+  );
   const visibleStrokes = useMemo(
     () =>
       realtimeInk.enabled
         ? [
-            ...editor.strokes,
-            ...realtimeInk.remoteFinalStrokes,
-            ...realtimeInk.remoteStrokes,
+            ...realtimeInk.sharedStrokes,
+            ...editor.strokes.filter(
+              (stroke) => !sharedStrokeIds.has(stroke.id),
+            ),
+            ...realtimeInk.remoteStrokes.filter(
+              (stroke) => !sharedStrokeIds.has(stroke.id),
+            ),
           ]
         : editor.strokes,
     [
       editor.strokes,
       realtimeInk.enabled,
-      realtimeInk.remoteFinalStrokes,
       realtimeInk.remoteStrokes,
+      realtimeInk.sharedStrokes,
+      sharedStrokeIds,
     ],
   );
   const visibleObjects = useMemo(
     () =>
       realtimeInk.enabled
-        ? [...editor.objects, ...realtimeInk.remoteObjects]
+        ? [
+            ...realtimeInk.sharedObjects,
+            ...editor.objects.filter(
+              (object) => !sharedObjectIds.has(object.id),
+            ),
+          ]
         : editor.objects,
-    [editor.objects, realtimeInk.enabled, realtimeInk.remoteObjects],
+    [
+      editor.objects,
+      realtimeInk.enabled,
+      realtimeInk.sharedObjects,
+      sharedObjectIds,
+    ],
   );
   const localRealtimeStrokeIdsRef = useRef<Set<string>>(new Set());
   const committedStrokeSnapshotsRef = useRef<Map<string, string>>(new Map());
