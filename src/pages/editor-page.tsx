@@ -16,6 +16,28 @@ type ClampRange = {
   max: number;
 };
 
+function getSelectionTargets(
+  selection: ReturnType<typeof useEditorState>["selection"],
+  groupSelection: ReturnType<typeof useEditorState>["groupSelection"],
+) {
+  if (groupSelection.length > 0) return groupSelection;
+  return selection ? [selection] : [];
+}
+
+function isDeleteKey(event: KeyboardEvent): boolean {
+  return event.key === "Delete" || event.key === "Backspace";
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    target instanceof HTMLButtonElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
+}
+
 function clamp(value: number, range: ClampRange): number {
   return Math.min(Math.max(value, range.min), range.max);
 }
@@ -94,6 +116,8 @@ function EditorPage(): JSX.Element {
   const activeLocalStrokeIdRef = useRef<string | undefined>();
   const localRealtimeObjectIdsRef = useRef<Set<string>>(new Set());
   const committedObjectSnapshotsRef = useRef<Map<string, string>>(new Map());
+  const previousSharedStrokeIdsRef = useRef<Set<string>>(new Set());
+  const previousSharedObjectIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!realtimeInk.enabled) return;
@@ -159,6 +183,50 @@ function EditorPage(): JSX.Element {
     }
   }, [editor.objects, realtimeInk]);
 
+  useEffect(() => {
+    if (!realtimeInk.enabled) {
+      previousSharedStrokeIdsRef.current = new Set();
+      previousSharedObjectIdsRef.current = new Set();
+      return;
+    }
+
+    const removedLocalStrokeIds = Array.from(
+      localRealtimeStrokeIdsRef.current,
+    ).filter(
+      (strokeId) =>
+        previousSharedStrokeIdsRef.current.has(strokeId) &&
+        !sharedStrokeIds.has(strokeId),
+    );
+    const removedLocalObjectIds = Array.from(
+      localRealtimeObjectIdsRef.current,
+    ).filter(
+      (objectId) =>
+        previousSharedObjectIdsRef.current.has(objectId) &&
+        !sharedObjectIds.has(objectId),
+    );
+
+    if (removedLocalStrokeIds.length > 0 || removedLocalObjectIds.length > 0) {
+      editor.removeElementsById(removedLocalStrokeIds, removedLocalObjectIds);
+
+      for (const strokeId of removedLocalStrokeIds) {
+        localRealtimeStrokeIdsRef.current.delete(strokeId);
+        committedStrokeSnapshotsRef.current.delete(strokeId);
+      }
+      for (const objectId of removedLocalObjectIds) {
+        localRealtimeObjectIdsRef.current.delete(objectId);
+        committedObjectSnapshotsRef.current.delete(objectId);
+      }
+    }
+
+    previousSharedStrokeIdsRef.current = new Set(sharedStrokeIds);
+    previousSharedObjectIdsRef.current = new Set(sharedObjectIds);
+  }, [
+    editor,
+    realtimeInk.enabled,
+    sharedObjectIds,
+    sharedStrokeIds,
+  ]);
+
   const handleAddText = useCallback(() => {
     const object = editor.addText();
     if (!object) return;
@@ -223,6 +291,61 @@ function EditorPage(): JSX.Element {
     }
     realtimeInk.endStroke();
   }, [editor, realtimeInk]);
+  const deleteSharedSelection = useCallback(() => {
+    if (!realtimeInk.enabled) return;
+
+    const targets = getSelectionTargets(
+      editor.selection,
+      editor.groupSelection,
+    );
+    if (targets.length === 0) return;
+
+    const strokeIds = targets
+      .filter((item) => item.type === "stroke")
+      .map((item) => item.id)
+      .filter((id) => sharedStrokeIds.has(id));
+    const objectIds = targets
+      .filter((item) => item.type === "object")
+      .map((item) => item.id)
+      .filter((id) => sharedObjectIds.has(id));
+
+    if (strokeIds.length > 0) {
+      realtimeInk.deleteStrokes(strokeIds);
+    }
+    if (objectIds.length > 0) {
+      realtimeInk.deleteObjects(objectIds);
+    }
+  }, [
+    editor.groupSelection,
+    editor.selection,
+    realtimeInk,
+    sharedObjectIds,
+    sharedStrokeIds,
+  ]);
+  const handleDeleteSelection = useCallback(() => {
+    deleteSharedSelection();
+    editor.deleteSelection();
+  }, [deleteSharedSelection, editor]);
+
+  useEffect(() => {
+    if (!realtimeInk.enabled) return undefined;
+
+    const handleSharedDeleteKey = (event: globalThis.KeyboardEvent): void => {
+      if (!isDeleteKey(event)) return;
+      if (editor.editingText) return;
+      if (isEditableTarget(event.target)) return;
+      deleteSharedSelection();
+    };
+
+    window.addEventListener("keydown", handleSharedDeleteKey, {
+      capture: true,
+    });
+    return () => {
+      window.removeEventListener("keydown", handleSharedDeleteKey, {
+        capture: true,
+      });
+    };
+  }, [deleteSharedSelection, editor.editingText, realtimeInk.enabled]);
 
   return (
     <main className="whiteboard-shell">
@@ -252,7 +375,7 @@ function EditorPage(): JSX.Element {
           setPageZoom((value) => clamp(value / 1.2, { min: 0.5, max: 3 }))
         }
         onToggleReadonly={() => editor.setReadonly((value) => !value)}
-        onDeleteSelection={editor.deleteSelection}
+        onDeleteSelection={handleDeleteSelection}
         onClearAll={editor.clearAll}
         onBringForward={editor.bringForward}
         onSendBackward={editor.sendBackward}

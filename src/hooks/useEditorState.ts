@@ -864,6 +864,44 @@ function useEditorState(
     selection,
   ]);
 
+  const removeElementsById = useCallback(
+    (strokeIdsInput: string[], objectIdsInput: string[]): void => {
+      const strokeIds = new Set(strokeIdsInput);
+      const objectIds = new Set(objectIdsInput);
+      if (strokeIds.size === 0 && objectIds.size === 0) return;
+
+      if (strokeIds.size > 0) {
+        setStrokes((previous) =>
+          previous.filter((stroke) => !strokeIds.has(stroke.id)),
+        );
+      }
+      if (objectIds.size > 0) {
+        setObjects((previous) =>
+          previous.filter((object) => !objectIds.has(object.id)),
+        );
+      }
+
+      setSelection((previous) => {
+        if (!previous) return previous;
+        if (previous.type === "stroke" && strokeIds.has(previous.id)) {
+          return undefined;
+        }
+        if (previous.type === "object" && objectIds.has(previous.id)) {
+          return undefined;
+        }
+        return previous;
+      });
+      setGroupSelection((previous) =>
+        previous.filter((item) =>
+          item.type === "stroke"
+            ? !strokeIds.has(item.id)
+            : !objectIds.has(item.id),
+        ),
+      );
+    },
+    [],
+  );
+
   useEffect(() => {
     const handleDeleteKey = (event: globalThis.KeyboardEvent): void => {
       if (!isDeleteKeyPress(event)) return;
@@ -1582,6 +1620,7 @@ function useEditorState(
     addImageFromFile,
     clearAll,
     deleteSelection,
+    removeElementsById,
     undo,
     redo,
     beginStroke,
