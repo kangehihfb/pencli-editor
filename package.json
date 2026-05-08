@@ -10,6 +10,7 @@
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "export:browser-screenshot": "node scripts/export-browser-screenshot.mjs",
     "test:pencil-input": "node scripts/pencil-input-compat-report.mjs",
+    "load:realtime-fleet": "node scripts/realtime-fleet.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

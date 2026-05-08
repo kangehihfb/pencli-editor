@@ -34,6 +34,37 @@ type MemorySummary = {
   jsHeapSizeLimit: number;
 };
 
+type RealtimeInkPerfSnapshot = {
+  collectedAt: string;
+  roomId: string;
+  actor: {
+    id: string;
+    role: string;
+  };
+  status: RealtimeInkStatus;
+  browser: {
+    userAgent: string;
+    devicePixelRatio: number;
+    viewport: {
+      width: number;
+      height: number;
+    };
+    memory: MemorySummary | undefined;
+  };
+  canvas: {
+    strokes: number;
+    strokePoints: number;
+    averagePointsPerStroke: number;
+    objects: number;
+    images: number;
+    imageBytes: number;
+    remoteDrafts: number;
+  };
+  realtime: RealtimeInkYjsDebug;
+  frame: FrameSummary;
+  webgl: EditorRenderStats | undefined;
+};
+
 type RealtimeInkPerfProbePanelProps = {
   status: RealtimeInkStatus;
   roomId: string;
@@ -45,6 +76,12 @@ type RealtimeInkPerfProbePanelProps = {
   yjsDebug: RealtimeInkYjsDebug;
   renderStats: EditorRenderStats | undefined;
 };
+
+declare global {
+  interface Window {
+    __realtimeInkPerfSnapshot?: RealtimeInkPerfSnapshot;
+  }
+}
 
 const frameWindowMs = 10_000;
 const emptyFrameSummary: FrameSummary = {
@@ -250,7 +287,7 @@ export function RealtimeInkPerfProbePanel(
     return () => window.cancelAnimationFrame(animationFrame);
   }, []);
 
-  const snapshot = useMemo(
+  const snapshot = useMemo<RealtimeInkPerfSnapshot>(
     () => ({
       collectedAt: new Date().toISOString(),
       roomId,
@@ -298,6 +335,15 @@ export function RealtimeInkPerfProbePanel(
       yjsDebug,
     ],
   );
+
+  useEffect(() => {
+    window.__realtimeInkPerfSnapshot = snapshot;
+    return () => {
+      if (window.__realtimeInkPerfSnapshot === snapshot) {
+        delete window.__realtimeInkPerfSnapshot;
+      }
+    };
+  }, [snapshot]);
 
   const handleCopy = useCallback(() => {
     void window.navigator.clipboard?.writeText(JSON.stringify(snapshot, null, 2));
