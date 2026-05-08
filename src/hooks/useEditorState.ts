@@ -19,7 +19,7 @@ import type {
 import { examPresets } from "../data/examPresets";
 import {
   getGroupResizeTransform,
-  getNextStrokePoints,
+  getNextStrokePointBatch,
   getObjectBounds,
   getPointBounds,
   getSelectionItemsBounds,
@@ -275,51 +275,11 @@ function getTextScaleForResizeHandle(input: TextScaleInput): number {
   );
 }
 
-function appendStrokePoints(
-  basePoints: Point2D[],
-  pointsToAppend: Point2D[],
-): Point2D[] {
-  if (pointsToAppend.length === 0) return basePoints;
-  const [firstPoint, ...remainingPoints] = pointsToAppend;
-  const nextPoints = getNextStrokePoints(basePoints, firstPoint);
-  return appendStrokePoints(nextPoints, remainingPoints);
-}
-
 function moveStrokePoints(points: Point2D[], delta: Point2D): Point2D[] {
   return points.map((point) => ({
     x: point.x + delta.x,
     y: point.y + delta.y,
   }));
-}
-
-function shouldCloseStrokeLoop(stroke: Stroke): boolean {
-  if (stroke.points.length < 8) return false;
-  const firstPoint = stroke.points[0];
-  const lastPoint = stroke.points[stroke.points.length - 1];
-  const bounds = getPointBounds(stroke.points);
-  const minDimension = Math.min(bounds.width, bounds.height);
-  const minLoopDimension = Math.max(28, stroke.size * 8);
-  if (minDimension < minLoopDimension) return false;
-
-  const endpointGap = Math.hypot(
-    firstPoint.x - lastPoint.x,
-    firstPoint.y - lastPoint.y,
-  );
-  const closeThreshold = Math.max(
-    stroke.size * 2.5,
-    Math.min(Math.max(stroke.size * 7, 18), minDimension * 0.35, 32),
-  );
-  return endpointGap <= closeThreshold;
-}
-
-function closeLoopStrokeIfNeeded(stroke: Stroke): Stroke {
-  if (!shouldCloseStrokeLoop(stroke)) return stroke;
-
-  const firstPoint = stroke.points[0];
-  const closedPoints = getNextStrokePoints(stroke.points, firstPoint);
-  return closedPoints === stroke.points
-    ? stroke
-    : { ...stroke, points: closedPoints };
 }
 
 function createInsertedTextObject(input: TextObjectInsertInput): WebGLObject {
@@ -1035,7 +995,10 @@ function useEditorState(
     setStrokes((previous) =>
       previous.map((stroke) => {
         if (stroke.id !== targetStrokeId) return stroke;
-        const nextPoints = appendStrokePoints(stroke.points, pointsToAppend);
+        const nextPoints = getNextStrokePointBatch(
+          stroke.points,
+          pointsToAppend,
+        );
         if (nextPoints === stroke.points) return stroke;
         return { ...stroke, points: nextPoints };
       }),
@@ -1561,16 +1524,6 @@ function useEditorState(
   };
 
   const endStroke = (): void => {
-    const targetStrokeId = activeStrokeIdReference.current;
-    if (targetStrokeId) {
-      setStrokes((previous) =>
-        previous.map((stroke) =>
-          stroke.id === targetStrokeId
-            ? closeLoopStrokeIfNeeded(stroke)
-            : stroke,
-        ),
-      );
-    }
     activeStrokeIdReference.current = undefined;
     setActiveStrokeId(undefined);
   };

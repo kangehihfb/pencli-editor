@@ -19,6 +19,7 @@ type EditorStageProperties = EditorSceneProperties & {
   pageZoom?: number;
   exportRequestId?: number;
   comparisonExportRequestId?: number;
+  showPerformanceMonitor?: boolean;
 };
 
 type PencilReportPointerEvent = {
@@ -152,6 +153,7 @@ export function EditorStage({
   pageZoom = 1,
   exportRequestId = 0,
   comparisonExportRequestId = 0,
+  showPerformanceMonitor = false,
   ...sceneProperties
 }: EditorStageProperties) {
   const frameReference = useRef<HTMLDivElement>();
@@ -1029,10 +1031,13 @@ ${JSON.stringify(touchEvents.slice(-80), undefined, 2)}
               <Canvas
                 className="stage-canvas stage-ink-canvas"
                 dpr={[1, 2]}
+                frameloop="demand"
                 gl={{ alpha: true, preserveDrawingBuffer: true }}
                 style={isInkPassive ? { pointerEvents: "none" } : undefined}
               >
-                {isInkPassive ? undefined : <PerformanceMonitor />}
+                {!isInkPassive && showPerformanceMonitor ? (
+                  <PerformanceMonitor />
+                ) : undefined}
                 <OrthographicCamera
                   makeDefault
                   position={[0, 0, 7]}

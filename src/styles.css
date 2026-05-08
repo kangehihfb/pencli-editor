@@ -1596,7 +1596,7 @@ button {
   position: fixed;
   right: 18px;
   top: 50%;
-  z-index: 30;
+  z-index: 10020;
   display: grid;
   gap: 8px;
   width: 236px;
@@ -1677,6 +1677,115 @@ button {
 }
 
 .realtime-ink-status small {
+  overflow: hidden;
+  color: #60717a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.realtime-ink-perf-probe {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 10021;
+  display: grid;
+  gap: 8px;
+  width: 340px;
+  max-height: min(560px, calc(100vh - 36px));
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid rgba(22, 40, 48, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 24px rgba(20, 31, 38, 0.14);
+  color: #1b2d34;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.realtime-ink-perf-probe:not([open]) {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.realtime-ink-perf-probe summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 168px;
+  padding: 7px 9px;
+  border: 1px solid rgba(22, 40, 48, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 18px rgba(20, 31, 38, 0.12);
+  cursor: pointer;
+  list-style: none;
+}
+
+.realtime-ink-perf-probe summary::-webkit-details-marker {
+  display: none;
+}
+
+.realtime-ink-perf-probe summary span {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #e8f0ff;
+  color: #1656b8;
+  font-weight: 800;
+}
+
+.realtime-ink-perf-probe dl {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.realtime-ink-perf-probe dl div {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.realtime-ink-perf-probe dt {
+  color: #60717a;
+  font-weight: 600;
+}
+
+.realtime-ink-perf-probe dd {
+  margin: 0;
+  color: #1656b8;
+  font-weight: 800;
+  text-align: right;
+}
+
+.realtime-ink-perf-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.realtime-ink-perf-actions button {
+  height: 28px;
+  border: 1px solid rgba(22, 40, 48, 0.14);
+  border-radius: 6px;
+  color: #1b2d34;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.realtime-ink-perf-actions button:hover {
+  background: #f2f6fb;
+}
+
+.realtime-ink-perf-probe small {
   overflow: hidden;
   color: #60717a;
   text-overflow: ellipsis;

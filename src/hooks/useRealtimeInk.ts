@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import type { Point2D, Stroke, WebGLObject } from "../types/editor";
 import useRealtimeInkDocument from "./useRealtimeInkDocument";
+import { getNextStrokePointBatch } from "../lib/sceneMath";
 import {
-  appendUniquePoints,
   batchIntervalMs,
   decodeMessage,
   defaultRemoteLayer,
@@ -279,7 +279,7 @@ export function useRealtimeInk() {
               {
                 id: message.strokeId,
                 kind: "stroke",
-                points: message.points,
+                points: getNextStrokePointBatch([], message.points),
                 color: message.color,
                 size: message.size,
                 layer: message.layer,
@@ -290,7 +290,10 @@ export function useRealtimeInk() {
             stroke.id === message.strokeId
               ? {
                   ...stroke,
-                  points: appendUniquePoints(stroke.points, message.points),
+                  points: getNextStrokePointBatch(
+                    stroke.points,
+                    message.points,
+                  ),
                 }
               : stroke,
           );
@@ -302,7 +305,10 @@ export function useRealtimeInk() {
         setRemoteStrokes((previous) =>
           previous.map((stroke) =>
             stroke.id === message.strokeId
-              ? { ...stroke, points: message.points }
+              ? {
+                  ...stroke,
+                  points: message.points,
+                }
               : stroke,
           ),
         );
@@ -380,11 +386,12 @@ export function useRealtimeInk() {
         : [pointOrPoints];
       if (points.length === 0) return;
 
-      activeStroke.points = appendUniquePoints(activeStroke.points, points);
-      pendingPointsReference.current = [
-        ...pendingPointsReference.current,
-        ...points,
-      ];
+      const nextPoints = getNextStrokePointBatch(activeStroke.points, points);
+      if (nextPoints === activeStroke.points) return;
+
+      const appendedPoints = nextPoints.slice(activeStroke.points.length);
+      activeStroke.points = nextPoints;
+      pendingPointsReference.current.push(...appendedPoints);
       scheduleFlush();
     },
     [configuration.enabled, scheduleFlush],
@@ -423,9 +430,7 @@ export function useRealtimeInk() {
 
   const remoteFinalStrokes = useMemo(
     () =>
-      yjsStrokes.filter(
-        (stroke) => stroke.actorId !== configuration.actorId,
-      ),
+      yjsStrokes.filter((stroke) => stroke.actorId !== configuration.actorId),
     [configuration.actorId, yjsStrokes],
   );
 

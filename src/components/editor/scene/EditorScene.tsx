@@ -1,5 +1,5 @@
 import { OrbitControls } from "@react-three/drei";
-import { useThree } from "@react-three/fiber";
+import { addAfterEffect, useThree } from "@react-three/fiber";
 import type { ThreeEvent } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ElementRef, FocusEvent, KeyboardEvent } from "react";
@@ -188,6 +188,17 @@ export type EditorSceneProps = {
   renderSceneBackground?: boolean;
   renderVisualLayer?: boolean;
   viewportLocked?: boolean;
+  onRenderStats?: (stats: EditorRenderStats) => void;
+};
+
+export type EditorRenderStats = {
+  calls: number;
+  triangles: number;
+  lines: number;
+  points: number;
+  geometries: number;
+  textures: number;
+  programs: number;
 };
 
 export function EditorScene({
@@ -230,6 +241,7 @@ export function EditorScene({
   renderSceneBackground = true,
   renderVisualLayer = true,
   viewportLocked = false,
+  onRenderStats,
 }: EditorSceneProps) {
   const controlsReference = useRef<ElementRef<typeof OrbitControls>>();
   const { camera, gl, size } = useThree();
@@ -243,6 +255,7 @@ export function EditorScene({
     rotation: number;
   } | undefined>();
   const isDrawingReference = useRef(false);
+  const lastRenderStatsAtReference = useRef(0);
   const activePointerIdReference = useRef<number>();
   const lastObjectClickReference = useRef<{ id: string; time: number }>();
   const groupBounds = useMemo(
@@ -291,6 +304,28 @@ export function EditorScene({
     width: 100,
     height: 100,
   };
+
+  useEffect(() => {
+    if (!onRenderStats) return;
+
+    return addAfterEffect((timestamp) => {
+      const now = timestamp || performance.now();
+      if (now - lastRenderStatsAtReference.current < 500) return;
+      lastRenderStatsAtReference.current = now;
+
+      onRenderStats({
+        calls: gl.info.render.calls,
+        triangles: gl.info.render.triangles,
+        lines: gl.info.render.lines,
+        points: gl.info.render.points,
+        geometries: gl.info.memory.geometries,
+        textures: gl.info.memory.textures,
+        programs: Array.isArray(gl.info.programs)
+          ? gl.info.programs.length
+          : 0,
+      });
+    });
+  }, [gl, onRenderStats]);
 
   useEffect(() => {
     drawingBoundsReference.current = drawingBounds;
@@ -747,15 +782,15 @@ export function EditorScene({
       }
     };
 
-    window.addEventListener("pointerrawupdate", handleDrawingPointerMove, true);
-    window.addEventListener("pointermove", handleDrawingPointerMove, true);
+    const drawingMoveEvent =
+      "onpointerrawupdate" in window ? "pointerrawupdate" : "pointermove";
+    window.addEventListener(drawingMoveEvent, handleDrawingPointerMove, true);
     return () => {
       window.removeEventListener(
-        "pointerrawupdate",
+        drawingMoveEvent,
         handleDrawingPointerMove,
         true,
       );
-      window.removeEventListener("pointermove", handleDrawingPointerMove, true);
     };
   }, [
     appendStrokePointsFromClientEvent,

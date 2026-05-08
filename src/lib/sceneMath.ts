@@ -34,8 +34,12 @@ const resizeHandles: ResizeHandle[] = [
   "w",
 ];
 
-const strokePointMinDistance = 0.18;
-const strokePointMaxSpacing = 0.85;
+const strokePointMinDistance = 2.2;
+const strokeSimplifyBaseEpsilon = 2.8;
+const strokeSimplifySizeFactor = 0.85;
+const strokeSimplifyTargetSpacing = 14;
+const strokeSimplifyMinPointCount = 18;
+const strokeSimplifyMaxPointCount = 140;
 
 export function getEditorPointerPoint(
   event: ThreeEvent<PointerEvent>,
@@ -105,7 +109,9 @@ export function getSelectionItemsBounds(
     .map((item) => {
       if (item.type === "stroke") {
         const stroke = strokes.find((candidate) => candidate.id === item.id);
-        return stroke ? getPointBounds(getRotatedStrokePoints(stroke)) : undefined;
+        return stroke
+          ? getPointBounds(getRotatedStrokePoints(stroke))
+          : undefined;
       }
       const object = objects.find((candidate) => candidate.id === item.id);
       return object ? getObjectBounds(object) : undefined;
@@ -790,26 +796,145 @@ export function getRotatedStrokePoints(stroke: Stroke) {
   return rotatePoints(stroke.points, getBoundsCenter(bounds), rotation);
 }
 
-export function getNextStrokePoints(points: Point2D[], point: Point2D) {
-  const last = points.at(-1);
-  if (!last) return [point];
+function appendFilteredStrokePoint(points: Point2D[], point: Point2D) {
+  const last = points[points.length - 1];
+  if (!last) {
+    points.push(point);
+    return;
+  }
 
   const segmentLength = distance(point, last);
-  if (segmentLength < strokePointMinDistance) return points;
+  if (segmentLength < strokePointMinDistance) return;
+  points.push(point);
+}
 
-  const segmentCount = Math.max(
-    1,
-    Math.ceil(segmentLength / strokePointMaxSpacing),
+export function getNextStrokePoints(points: Point2D[], point: Point2D) {
+  const nextPoints = [...points];
+  appendFilteredStrokePoint(nextPoints, point);
+  return nextPoints.length === points.length ? points : nextPoints;
+}
+
+export function getNextStrokePointBatch(
+  points: Point2D[],
+  pointsToAppend: Point2D[],
+) {
+  if (pointsToAppend.length === 0) return points;
+  const nextPoints = [...points];
+  for (const point of pointsToAppend) {
+    appendFilteredStrokePoint(nextPoints, point);
+  }
+  return nextPoints.length === points.length ? points : nextPoints;
+}
+
+export function simplifyStrokePoints(
+  points: Point2D[],
+  strokeSize: number,
+): Point2D[] {
+  const compactedPoints = getNextStrokePointBatch([], points);
+  if (compactedPoints.length <= 2) return compactedPoints;
+
+  const pointBudget = getStrokePointBudget(compactedPoints);
+  let epsilon = Math.max(
+    strokeSimplifyBaseEpsilon,
+    strokeSize * strokeSimplifySizeFactor,
   );
-  const nextPoints = Array.from({ length: segmentCount }, (_, index) => {
-    const t = (index + 1) / segmentCount;
-    return {
-      x: last.x + (point.x - last.x) * t,
-      y: last.y + (point.y - last.y) * t,
-    };
-  });
+  let simplifiedPoints = simplifyPointsRdp(compactedPoints, epsilon);
 
-  return [...points, ...nextPoints];
+  for (
+    let attempts = 0;
+    simplifiedPoints.length > pointBudget && attempts < 8;
+    attempts += 1
+  ) {
+    epsilon *= 1.35;
+    simplifiedPoints = simplifyPointsRdp(compactedPoints, epsilon);
+  }
+
+  return limitPointsToBudget(simplifiedPoints, pointBudget);
+}
+
+function getStrokePointBudget(points: Point2D[]): number {
+  const pathLength = getStrokePathLength(points);
+  return Math.round(
+    Math.min(
+      strokeSimplifyMaxPointCount,
+      Math.max(
+        strokeSimplifyMinPointCount,
+        pathLength / strokeSimplifyTargetSpacing,
+      ),
+    ),
+  );
+}
+
+function getStrokePathLength(points: Point2D[]): number {
+  let pathLength = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    pathLength += distance(points[index - 1], points[index]);
+  }
+  return pathLength;
+}
+
+function simplifyPointsRdp(points: Point2D[], epsilon: number): Point2D[] {
+  if (points.length <= 2) return points;
+
+  const keepPoints = new Array<boolean>(points.length).fill(false);
+  const ranges: Array<[number, number]> = [[0, points.length - 1]];
+  keepPoints[0] = true;
+  keepPoints[points.length - 1] = true;
+
+  while (ranges.length > 0) {
+    const range = ranges.pop();
+    if (!range) continue;
+
+    const [startIndex, endIndex] = range;
+    if (endIndex <= startIndex + 1) continue;
+
+    let farthestIndex = startIndex;
+    let farthestDistance = 0;
+    const start = points[startIndex];
+    const end = points[endIndex];
+
+    for (let index = startIndex + 1; index < endIndex; index += 1) {
+      const currentDistance = distanceToSegment(points[index], start, end);
+      if (currentDistance <= farthestDistance) continue;
+
+      farthestDistance = currentDistance;
+      farthestIndex = index;
+    }
+
+    if (farthestDistance <= epsilon) continue;
+
+    keepPoints[farthestIndex] = true;
+    ranges.push([startIndex, farthestIndex], [farthestIndex, endIndex]);
+  }
+
+  return points.filter((_, index) => keepPoints[index]);
+}
+
+function limitPointsToBudget(
+  points: Point2D[],
+  pointBudget: number,
+): Point2D[] {
+  if (points.length <= pointBudget) return points;
+  if (pointBudget <= 2) return [points[0], points[points.length - 1]];
+
+  const limitedPoints: Point2D[] = [];
+  let previousIndex = -1;
+  for (let index = 0; index < pointBudget; index += 1) {
+    const sourceIndex =
+      index === pointBudget - 1
+        ? points.length - 1
+        : Math.round((index * (points.length - 1)) / (pointBudget - 1));
+    if (sourceIndex === previousIndex) continue;
+
+    limitedPoints.push(points[sourceIndex]);
+    previousIndex = sourceIndex;
+  }
+
+  const lastPoint = points[points.length - 1];
+  if (limitedPoints[limitedPoints.length - 1] !== lastPoint) {
+    limitedPoints.push(lastPoint);
+  }
+  return limitedPoints.slice(0, pointBudget);
 }
 
 export function getSmoothedStrokePoints(points: Point2D[]) {
@@ -849,7 +974,8 @@ export function getSceneHits(event: ThreeEvent<PointerEvent>): SceneHit[] {
         sceneLayer?: number;
       };
 
-      if (!sceneType || !sceneId || typeof sceneLayer !== "number") return undefined;
+      if (!sceneType || !sceneId || typeof sceneLayer !== "number")
+        return undefined;
 
       return {
         type: sceneType,

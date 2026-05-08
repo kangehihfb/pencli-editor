@@ -1,7 +1,5 @@
 import type { ThreeEvent } from "@react-three/fiber";
 import { useMemo } from "react";
-import * as ClipperLib from "clipper-lib";
-import { getStrokePoints } from "perfect-freehand";
 import * as THREE from "three";
 import { getPointBounds, layerToZ } from "../../../lib/sceneMath";
 import type { Point2D, Stroke } from "../../../types/editor";
@@ -10,91 +8,6 @@ import {
   RotationHandleMarker,
   SelectionFrame,
 } from "./SelectionVisuals";
-
-const clipperScale = 100;
-const strokeSmoothingOptions = {
-  thinning: 0,
-  smoothing: 0.46,
-  streamline: 0.18,
-  simulatePressure: true,
-  last: true,
-  start: { cap: true, taper: 0 },
-  end: { cap: true, taper: 0 },
-} as const;
-
-function createShapeGeometryFromPaths(paths: ClipperLib.Paths) {
-  const validPaths = paths.filter((path) => path.length >= 3);
-  const outerPaths = validPaths.filter((path) =>
-    ClipperLib.Clipper.Orientation(path),
-  );
-  const holePaths = validPaths.filter(
-    (path) => !ClipperLib.Clipper.Orientation(path),
-  );
-
-  const shapes = outerPaths.map((path) => {
-    const shape = new THREE.Shape();
-    shape.moveTo(path[0].X / clipperScale, path[0].Y / clipperScale);
-
-    for (let index = 1; index < path.length; index += 1) {
-      shape.lineTo(path[index].X / clipperScale, path[index].Y / clipperScale);
-    }
-    shape.closePath();
-    return { shape, path };
-  });
-
-  for (const holePath of holePaths) {
-    const target = shapes.find(
-      ({ path }) => ClipperLib.Clipper.PointInPolygon(holePath[0], path) !== 0,
-    );
-    if (!target) continue;
-
-    const hole = new THREE.Path();
-    hole.moveTo(holePath[0].X / clipperScale, holePath[0].Y / clipperScale);
-
-    for (let index = 1; index < holePath.length; index += 1) {
-      hole.lineTo(
-        holePath[index].X / clipperScale,
-        holePath[index].Y / clipperScale,
-      );
-    }
-    hole.closePath();
-    target.shape.holes.push(hole);
-  }
-
-  if (shapes.length === 0) return undefined;
-
-  const geometry = new THREE.ShapeGeometry(shapes.map(({ shape }) => shape));
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  return geometry;
-}
-
-function getUsableStrokePoints(points: Point2D[]) {
-  return points.filter((point, index) => {
-    const previous = points[index - 1];
-    if (!previous) return true;
-    return Math.hypot(point.x - previous.x, point.y - previous.y) > 0.001;
-  });
-}
-
-function getPerfectFreehandCenterPoints(points: Point2D[], radius: number) {
-  const usablePoints = getUsableStrokePoints(points);
-  if (usablePoints.length < 2) return undefined;
-
-  const strokePoints = getStrokePoints(
-    usablePoints.map((point) => [point.x, point.y]),
-    {
-      ...strokeSmoothingOptions,
-      size: radius * 2,
-    },
-  );
-
-  const centerPoints = strokePoints.map(({ point }) => ({
-    x: point[0],
-    y: point[1],
-  }));
-  return centerPoints.length >= 2 ? centerPoints : undefined;
-}
 
 function createStrokeRibbonGeometry(
   points: Point2D[],
@@ -165,38 +78,6 @@ function createStrokeRibbonGeometry(
   return geometry;
 }
 
-function createRoundedStrokeGeometryFromCenterPoints(
-  centerPoints: Point2D[],
-  radius: number,
-) {
-  const path = centerPoints.map((point) => ({
-    X: Math.round(point.x * clipperScale),
-    Y: Math.round(point.y * clipperScale),
-  }));
-  const offset = new ClipperLib.ClipperOffset(
-    2,
-    Math.max(1, radius * clipperScale * 0.08),
-  );
-  const solution: ClipperLib.Paths = [];
-
-  offset.AddPath(
-    path,
-    ClipperLib.JoinType.jtRound,
-    ClipperLib.EndType.etOpenRound,
-  );
-  offset.Execute(solution, radius * clipperScale);
-
-  const cleaned = ClipperLib.Clipper.CleanPolygons(
-    solution,
-    Math.max(1, clipperScale * 0.02),
-  );
-
-  return (
-    createShapeGeometryFromPaths(cleaned) ??
-    createStrokeRibbonGeometry(centerPoints, radius, 8)
-  );
-}
-
 type StrokeMeshProperties = {
   stroke: Stroke;
   renderVisual: boolean;
@@ -234,31 +115,21 @@ export function StrokeMesh({
   );
   const geometry = useMemo(() => {
     if (localPoints.length < 2) return undefined;
-    const centerPoints = getPerfectFreehandCenterPoints(
+    const pickerRadius = Math.max(stroke.size * 1.45, stroke.size + 1.8);
+    const visual = createStrokeRibbonGeometry(
       localPoints,
       stroke.size,
-    );
-    if (!centerPoints) return undefined;
-
-    const pickerRadius = Math.max(stroke.size * 1.45, stroke.size + 1.8);
-    const visual = createRoundedStrokeGeometryFromCenterPoints(
-      centerPoints,
-      stroke.size,
+      activelyDrawing ? 3 : 5,
     );
     if (!visual) return undefined;
-    const continuity = createStrokeRibbonGeometry(
-      centerPoints,
-      Math.max(stroke.size * 0.62, stroke.size - 1.4),
-      5,
-    );
 
     return {
       visual,
-      continuity,
       picker: hitTestEnabled
-        ? createRoundedStrokeGeometryFromCenterPoints(
-            centerPoints,
+        ? createStrokeRibbonGeometry(
+            localPoints,
             pickerRadius,
+            5,
           )
         : undefined,
     };
@@ -294,46 +165,27 @@ export function StrokeMesh({
             </mesh>
           ) : undefined}
           {renderVisual ? (
-            <>
-              {geometry.continuity ? (
-                <mesh
-                  name={`${strokeSceneName}:continuity`}
-                  geometry={geometry.continuity}
-                  renderOrder={stroke.layer * 10}
-                  raycast={() => undefined}
-                >
-                  <meshBasicMaterial
-                    color={stroke.color}
-                    transparent
-                    opacity={1}
-                    depthTest={false}
-                    depthWrite={false}
-                    side={THREE.DoubleSide}
-                  />
-                </mesh>
-              ) : undefined}
-              <mesh
-                name={`${strokeSceneName}:visual`}
-                geometry={geometry.visual}
-                renderOrder={stroke.layer * 10 + 1}
-                onPointerDown={onSelect}
-                userData={{
-                  sceneType: "stroke",
-                  sceneId: stroke.id,
-                  sceneLayer: stroke.layer,
-                  sceneName: strokeSceneName,
-                }}
-              >
-                <meshBasicMaterial
-                  color={stroke.color}
-                  transparent
-                  opacity={1}
-                  depthTest={false}
-                  depthWrite={false}
-                  side={THREE.DoubleSide}
-                />
-              </mesh>
-            </>
+            <mesh
+              name={`${strokeSceneName}:visual`}
+              geometry={geometry.visual}
+              renderOrder={stroke.layer * 10 + 1}
+              onPointerDown={onSelect}
+              userData={{
+                sceneType: "stroke",
+                sceneId: stroke.id,
+                sceneLayer: stroke.layer,
+                sceneName: strokeSceneName,
+              }}
+            >
+              <meshBasicMaterial
+                color={stroke.color}
+                transparent
+                opacity={1}
+                depthTest={false}
+                depthWrite={false}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
           ) : undefined}
         </>
       ) : undefined}

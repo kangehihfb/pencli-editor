@@ -1,4 +1,3 @@
-import { Leva } from "leva";
 import type { Stroke, WebGLObject } from "../../../types/editor";
 import { SelectionDebugControls } from "./SelectionDebugControls";
 
@@ -31,15 +30,6 @@ export function EditorDebugPanel({
         onUpdateObject={onUpdateObject}
         onUpdateStroke={onUpdateStroke}
       />
-      {/* <Leva
-        collapsed={false}
-        hidden={false}
-        titleBar={{
-          drag: true,
-          filter: true,
-          position: { x: 0, y: 120 },
-        }}
-      /> */}
     </>
   );
 }
