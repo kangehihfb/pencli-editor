@@ -1,7 +1,7 @@
 import type { ThreeEvent } from "@react-three/fiber";
 import { useMemo } from "react";
 import * as THREE from "three";
-import { getPointBounds, layerToZ } from "../../../lib/sceneMath";
+import { getPointBounds, getStrokeRenderPoints, layerToZ } from "../../../lib/sceneMath";
 import type { Point2D, Stroke } from "../../../types/editor";
 import {
   ResizeHandleMarker,
@@ -115,11 +115,16 @@ export function StrokeMesh({
   );
   const geometry = useMemo(() => {
     if (localPoints.length < 2) return undefined;
+    const sampledPoints = getStrokeRenderPoints(localPoints, {
+      activelyDrawing,
+      strokeSize: stroke.size,
+    });
+    if (sampledPoints.length < 2) return undefined;
     const pickerRadius = Math.max(stroke.size * 1.45, stroke.size + 1.8);
     const visual = createStrokeRibbonGeometry(
-      localPoints,
+      sampledPoints,
       stroke.size,
-      activelyDrawing ? 3 : 5,
+      5,
     );
     if (!visual) return undefined;
 
@@ -127,7 +132,7 @@ export function StrokeMesh({
       visual,
       picker: hitTestEnabled
         ? createStrokeRibbonGeometry(
-            localPoints,
+            sampledPoints,
             pickerRadius,
             5,
           )

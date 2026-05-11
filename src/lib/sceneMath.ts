@@ -40,6 +40,11 @@ const strokeSimplifySizeFactor = 0.85;
 const strokeSimplifyTargetSpacing = 14;
 const strokeSimplifyMinPointCount = 18;
 const strokeSimplifyMaxPointCount = 140;
+const strokeCurveMinStep = 2.5;
+const strokeCurveMaxStep = 8;
+const strokeCurveSharpCornerDegrees = 72;
+type StrokeRenderSmoothingMode = "catmullrom" | "smoothed";
+const strokeRenderSmoothingMode: StrokeRenderSmoothingMode = "catmullrom";
 
 export function getEditorPointerPoint(
   event: ThreeEvent<PointerEvent>,
@@ -962,6 +967,130 @@ export function getSmoothedStrokePoints(points: Point2D[]) {
   });
 
   return relaxed;
+}
+
+export function getStrokeRenderPoints(
+  points: Point2D[],
+  options?: {
+    activelyDrawing?: boolean;
+    strokeSize?: number;
+    smoothingMode?: StrokeRenderSmoothingMode;
+  },
+) {
+  if (points.length < 3) return points;
+
+  const smoothingMode = options?.smoothingMode ?? strokeRenderSmoothingMode;
+  const targetStep = THREE.MathUtils.clamp(
+    (options?.strokeSize ?? 4) * 0.75,
+    strokeCurveMinStep,
+    strokeCurveMaxStep,
+  );
+  const sampledPoints =
+    smoothingMode === "smoothed"
+      ? getLineCurvePoints(getSmoothedStrokePoints(points), targetStep)
+      : getCatmullRomChunkedPoints(points, targetStep);
+  return sampledPoints;
+}
+
+function getCatmullRomChunkedPoints(points: Point2D[], targetStep: number) {
+  if (points.length < 3) return getLineCurvePoints(points, targetStep);
+
+  const splitIndices = getSharpCornerSplitIndices(
+    points,
+    strokeCurveSharpCornerDegrees,
+  );
+  const sampledPoints: Point2D[] = [];
+
+  for (let index = 0; index < splitIndices.length - 1; index += 1) {
+    const start = splitIndices[index];
+    const end = splitIndices[index + 1];
+    const segment = points.slice(start, end + 1);
+    if (segment.length < 2) continue;
+
+    const segmentPoints =
+      segment.length < 3
+        ? getLineCurvePoints(segment, targetStep)
+        : getCatmullRomPoints(segment, targetStep);
+    if (segmentPoints.length === 0) continue;
+
+    if (sampledPoints.length === 0) {
+      sampledPoints.push(...segmentPoints);
+      continue;
+    }
+
+    sampledPoints.push(...segmentPoints.slice(1));
+  }
+
+  return sampledPoints.length > 1 ? sampledPoints : getLineCurvePoints(points, targetStep);
+}
+
+function getCatmullRomPoints(points: Point2D[], targetStep: number) {
+  const curve = new THREE.CatmullRomCurve3(
+    points.map((point) => new THREE.Vector3(point.x, point.y, 0)),
+    false,
+    "centripetal",
+    0.3,
+  );
+  const divisions = Math.max(
+    points.length,
+    Math.ceil(getStrokePathLength(points) / Math.max(targetStep, 0.5)),
+  );
+  return curve
+    .getPoints(divisions)
+    .map((point) => ({ x: point.x, y: point.y }));
+}
+
+function getLineCurvePoints(points: Point2D[], targetStep: number) {
+  if (points.length < 2) return points;
+
+  const sampledPoints: Point2D[] = [points[0]];
+  const safeStep = Math.max(targetStep, 0.5);
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    const segmentLength = distance(current, next);
+    if (segmentLength < 0.001) continue;
+
+    const divisions = Math.max(1, Math.ceil(segmentLength / safeStep));
+    const segmentCurve = new THREE.LineCurve(
+      new THREE.Vector2(current.x, current.y),
+      new THREE.Vector2(next.x, next.y),
+    );
+    const segmentPoints = segmentCurve.getPoints(divisions);
+    for (let pointIndex = 1; pointIndex < segmentPoints.length; pointIndex += 1) {
+      const point = segmentPoints[pointIndex];
+      sampledPoints.push({ x: point.x, y: point.y });
+    }
+  }
+
+  return sampledPoints;
+}
+
+function getSharpCornerSplitIndices(points: Point2D[], thresholdDegrees: number) {
+  const splitIndices = [0];
+
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    const next = points[index + 1];
+    const aX = current.x - previous.x;
+    const aY = current.y - previous.y;
+    const bX = next.x - current.x;
+    const bY = next.y - current.y;
+    const lengthA = Math.hypot(aX, aY);
+    const lengthB = Math.hypot(bX, bY);
+    if (lengthA < 0.0001 || lengthB < 0.0001) continue;
+
+    const dot = (aX * bX + aY * bY) / (lengthA * lengthB);
+    const angle = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(dot, -1, 1)));
+    if (angle >= thresholdDegrees) {
+      splitIndices.push(index);
+    }
+  }
+
+  splitIndices.push(points.length - 1);
+  return splitIndices;
 }
 
 export function getSceneHits(event: ThreeEvent<PointerEvent>): SceneHit[] {
