@@ -1,5 +1,11 @@
 export type Tool = "answer" | "pen" | "select" | "erase" | "pan";
 export type ObjectKind = "text" | "image";
+export type ImageAssetStatus =
+  | "local"
+  | "preview"
+  | "uploading"
+  | "uploaded"
+  | "error";
 
 export type Point2D = {
   x: number;
@@ -39,6 +45,14 @@ export type WebGLObject = {
   imageSrc?: string;
   imageBackground?: string;
   imageName?: string;
+  imageFileId?: string;
+  imageUrl?: string;
+  imageThumbnailUrl?: string;
+  imageStorageKey?: string;
+  imageMimeType?: string;
+  imageSizeBytes?: number;
+  imageSha256?: string;
+  imageStatus?: ImageAssetStatus;
 };
 
 export type SelectionItem =

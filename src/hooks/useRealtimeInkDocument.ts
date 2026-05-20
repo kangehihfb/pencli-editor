@@ -2,9 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import type { Point2D, Stroke, WebGLObject } from "../types/editor";
 import {
+  getImageAssetReference,
+  hydrateImageObject,
+  toRealtimeImageObject,
+} from "../lib/imageAssets";
+import {
   initialYjsDebug,
   localYjsOrigin,
+  normalizeStrokePoints,
   remoteYjsOrigin,
+  type CollaborativeAsset,
   type CollaborativeObject,
   type CollaborativeStroke,
   type RealtimeInkConfiguration,
@@ -39,6 +46,7 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
   const ydocReference = useRef<Y.Doc | undefined>();
   const yStrokesReference = useRef<Y.Map<CollaborativeStroke> | undefined>();
   const yObjectsReference = useRef<Y.Map<CollaborativeObject> | undefined>();
+  const yAssetsReference = useRef<Y.Map<CollaborativeAsset> | undefined>();
   const [yjsStrokes, setYjsStrokes] = useState<CollaborativeStroke[]>([]);
   const [yjsObjects, setYjsObjects] = useState<CollaborativeObject[]>([]);
   const [yjsDebug, setYjsDebug] =
@@ -62,19 +70,27 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
       remoteStrokeCount: remoteFinalStrokes.length,
     }));
     onRemoteFinalStrokesChange(remoteFinalStrokes);
-  }, [
-    configuration.actorId,
-    configuration.pageId,
-    onRemoteFinalStrokesChange,
-  ]);
+  }, [configuration.actorId, configuration.pageId, onRemoteFinalStrokesChange]);
 
   const refreshYjsObjects = useCallback(() => {
     const yObjects = yObjectsReference.current;
+    const yAssets = yAssetsReference.current;
     if (!yObjects) return;
 
-    const nextObjects = Array.from(yObjects.values()).filter(
-      (object) => object.pageId === configuration.pageId,
+    const assetsByFileId = new Map(
+      Array.from(yAssets?.values() ?? [])
+        .filter((asset) => asset.pageId === configuration.pageId)
+        .map((asset) => [asset.fileId, asset]),
     );
+    const nextObjects = Array.from(yObjects.values())
+      .filter((object) => object.pageId === configuration.pageId)
+      .map((object) => {
+        if (object.kind !== "image" || !object.imageFileId) return object;
+        return hydrateImageObject(
+          object,
+          assetsByFileId.get(object.imageFileId),
+        ) as CollaborativeObject;
+      });
     const remoteObjects = nextObjects.filter(
       (object) => object.actorId !== configuration.actorId,
     );
@@ -84,6 +100,7 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
       ...previous,
       objectCount: nextObjects.length,
       remoteObjectCount: remoteObjects.length,
+      assetCount: assetsByFileId.size,
     }));
     onRemoteObjectsChange(remoteObjects);
   }, [configuration.actorId, configuration.pageId, onRemoteObjectsChange]);
@@ -94,9 +111,11 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
     const ydoc = new Y.Doc();
     const yStrokes = ydoc.getMap<CollaborativeStroke>("strokes");
     const yObjects = ydoc.getMap<CollaborativeObject>("objects");
+    const yAssets = ydoc.getMap<CollaborativeAsset>("assets");
     ydocReference.current = ydoc;
     yStrokesReference.current = yStrokes;
     yObjectsReference.current = yObjects;
+    yAssetsReference.current = yAssets;
 
     const handleYjsUpdate = (update: Uint8Array, origin: unknown): void => {
       if (origin === remoteYjsOrigin) return;
@@ -113,17 +132,20 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
     ydoc.on("update", handleYjsUpdate);
     yStrokes.observe(refreshYjsStrokes);
     yObjects.observe(refreshYjsObjects);
+    yAssets.observe(refreshYjsObjects);
     refreshYjsStrokes();
     refreshYjsObjects();
 
     return () => {
       yStrokes.unobserve(refreshYjsStrokes);
       yObjects.unobserve(refreshYjsObjects);
+      yAssets.unobserve(refreshYjsObjects);
       ydoc.off("update", handleYjsUpdate);
       ydoc.destroy();
       ydocReference.current = undefined;
       yStrokesReference.current = undefined;
       yObjectsReference.current = undefined;
+      yAssetsReference.current = undefined;
       setYjsStrokes([]);
       setYjsObjects([]);
       setYjsDebug(initialYjsDebug);
@@ -131,11 +153,15 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
   }, [enabled, onLocalUpdate, refreshYjsObjects, refreshYjsStrokes]);
 
   const applyRemoteUpdate = useCallback(
-    (update: number[], options?: { sync?: boolean }) => {
+    (update: number[] | Uint8Array, options?: { sync?: boolean }) => {
       const ydoc = ydocReference.current;
       if (!ydoc) return;
 
-      Y.applyUpdate(ydoc, new Uint8Array(update), remoteYjsOrigin);
+      Y.applyUpdate(
+        ydoc,
+        update instanceof Uint8Array ? update : new Uint8Array(update),
+        remoteYjsOrigin,
+      );
       setYjsDebug((previous) => ({
         ...previous,
         remoteUpdateCount: previous.remoteUpdateCount + 1,
@@ -158,11 +184,13 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
       const yStrokes = yStrokesReference.current;
       if (!ydoc || !yStrokes) return;
 
+      const points = normalizeStrokePoints(stroke.points);
+
       ydoc.transact(() => {
         yStrokes.set(stroke.id, {
           id: stroke.id,
           kind: "stroke",
-          points: stroke.points,
+          points,
           color: stroke.color,
           size: stroke.size,
           rotation: stroke.rotation,
@@ -203,12 +231,28 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
     (objects: WebGLObject[]) => {
       const ydoc = ydocReference.current;
       const yObjects = yObjectsReference.current;
+      const yAssets = yAssetsReference.current;
       if (!ydoc || !yObjects) return;
 
       ydoc.transact(() => {
         for (const object of objects) {
+          const realtimeObject = toRealtimeImageObject(object);
+          const imageAsset = getImageAssetReference(object);
+
+          if (imageAsset && yAssets) {
+            yAssets.set(imageAsset.fileId, {
+              ...imageAsset,
+              width: object.width,
+              height: object.height,
+              pageId: configuration.pageId,
+              actorId: configuration.actorId,
+              actorRole: configuration.actorRole,
+              updatedAt: Date.now(),
+            });
+          }
+
           yObjects.set(object.id, {
-            ...object,
+            ...realtimeObject,
             pageId: configuration.pageId,
             actorId: configuration.actorId,
             actorRole: configuration.actorRole,
@@ -244,8 +288,8 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
 
   const encodeCurrentState = useCallback(() => {
     const ydoc = ydocReference.current;
-    if (!ydoc) return [];
-    return Array.from(Y.encodeStateAsUpdate(ydoc));
+    if (!ydoc) return new Uint8Array();
+    return Y.encodeStateAsUpdate(ydoc);
   }, []);
 
   const markSyncRequested = useCallback(() => {

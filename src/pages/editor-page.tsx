@@ -7,12 +7,15 @@ import type {
   PointBounds,
   SelectionItem,
   Stroke,
+  Tool,
   WebGLObject,
 } from "../types/editor";
 import { ExamPresentation } from "../components/exam/ExamPresentation";
 import { EditorDebugPanel } from "../components/editor/debug/EditorDebugPanel";
 import { RealtimeInkPerfProbePanel } from "../components/editor/debug/RealtimeInkPerfProbePanel";
 import { RealtimeInkDebugPanel } from "../components/editor/debug/RealtimeInkDebugPanel";
+import { StorageTraceDebugPanel } from "../components/editor/debug/StorageTraceDebugPanel";
+import { ProductTracePanel } from "../components/editor/debug/ProductTracePanel";
 import { EditorStage } from "../components/editor/EditorStage";
 import { EditorToolbar } from "../components/editor/EditorToolbar";
 import { reactExams } from "../data/reactExams";
@@ -32,6 +35,22 @@ import {
   measureTextObject,
 } from "../lib/objectTexture";
 import { PAGE_BOUNDS } from "../lib/pageGeometry";
+import {
+  createPentestHandwritingSnapshot,
+  getPentestLocalHandwritingInput,
+  loadPentestHandwritingSnapshot,
+  savePentestHandwritingSnapshot,
+} from "../lib/handwritingSnapshot";
+import {
+  loadProductHandwriting,
+  saveProductHandwriting,
+} from "../lib/productTraceClient";
+import {
+  makeStorageAssetKey,
+  uploadStorageAsset,
+  type StorageAssetUploadResponse,
+} from "../lib/storageTraceClient";
+import { optimizeImageForUpload } from "../lib/imageUploadOptimization";
 import type { EditorRenderStats } from "../components/editor/scene/EditorScene";
 
 type ClampRange = {
@@ -89,6 +108,27 @@ function isUrlFlagEnabled(name: string): boolean {
   if (typeof window === "undefined") return false;
   const value = new URLSearchParams(window.location.search).get(name);
   return value === "" || value === "1" || value === "true";
+}
+
+function isUrlFlagDisabled(name: string): boolean {
+  if (typeof window === "undefined") return false;
+  const value = new URLSearchParams(window.location.search).get(name);
+  return value === "0" || value === "false";
+}
+
+function readInitialTool(): Tool | undefined {
+  if (typeof window === "undefined") return undefined;
+  const value = new URLSearchParams(window.location.search).get("initialTool");
+  if (
+    value === "answer" ||
+    value === "pen" ||
+    value === "select" ||
+    value === "erase" ||
+    value === "pan"
+  ) {
+    return value;
+  }
+  return undefined;
 }
 
 function clamp(value: number, range: ClampRange): number {
@@ -222,7 +262,11 @@ function getScaledLocalPoint(input: {
       transform.localBounds.minY +
       (pointLocal.y - originBounds.minY) * transform.scaleY,
   };
-  return rotatePoint(nextLocalPoint, transform.originCenter, transform.rotation);
+  return rotatePoint(
+    nextLocalPoint,
+    transform.originCenter,
+    transform.rotation,
+  );
 }
 
 function getResizedSharedGroupObject(input: {
@@ -337,14 +381,67 @@ function getRotatedSharedGroupStroke(input: {
   };
 }
 
+function getStorageAssetUrl(
+  response: StorageAssetUploadResponse,
+): string | undefined {
+  return response.assetUrl ?? response.objectUrl ?? response.presignedGetUrl;
+}
+
+function getUploadedImageObject(input: {
+  object: WebGLObject;
+  upload: StorageAssetUploadResponse;
+}): WebGLObject | undefined {
+  const url = getStorageAssetUrl(input.upload);
+  if (!url) return undefined;
+
+  return {
+    ...input.object,
+    imageSrc: url,
+    imageFileId: input.object.imageFileId ?? input.upload.assetId,
+    imageUrl: url,
+    imageStorageKey: input.upload.key ?? input.object.imageStorageKey,
+    imageMimeType: input.upload.contentType ?? input.object.imageMimeType,
+    imageSizeBytes: input.upload.sizeBytes ?? input.object.imageSizeBytes,
+    imageSha256: input.upload.sha256 ?? input.object.imageSha256,
+    imageStatus: "uploaded",
+  };
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("Image preview did not produce a data URL"));
+    });
+    reader.addEventListener("error", () => {
+      reject(reader.error ?? new Error("Failed to read image preview"));
+    });
+    reader.readAsDataURL(file);
+  });
+}
+
 function EditorPage(): JSX.Element {
   const realtimeInk = useRealtimeInk();
   const [isPerfProbeEnabled] = useState(() => isUrlFlagEnabled("perfProbe"));
   const [isInkDebugEnabled] = useState(() => isUrlFlagEnabled("inkDebug"));
+  const [isStorageDebugEnabled] = useState(() =>
+    isUrlFlagEnabled("storageDebug"),
+  );
+  const [isProductTraceEnabled] = useState(
+    () => !isUrlFlagDisabled("productTrace"),
+  );
+  const [isProductTracePanelEnabled] = useState(() =>
+    isUrlFlagEnabled("productTracePanel"),
+  );
   const [isEditorDebugEnabled] = useState(() =>
     isUrlFlagEnabled("editorDebug"),
   );
   const [isR3fPerfEnabled] = useState(() => isUrlFlagEnabled("r3fPerf"));
+  const [initialTool] = useState(() => readInitialTool());
   const [renderStats, setRenderStats] = useState<EditorRenderStats>();
   const sharedMaxLayer = useMemo(
     () =>
@@ -355,18 +452,29 @@ function EditorPage(): JSX.Element {
             ...realtimeInk.sharedObjects.map((object) => object.layer),
           )
         : 0,
-    [
-      realtimeInk.enabled,
-      realtimeInk.sharedObjects,
-      realtimeInk.sharedStrokes,
-    ],
+    [realtimeInk.enabled, realtimeInk.sharedObjects, realtimeInk.sharedStrokes],
   );
-  const editor = useEditorState(PAGE_BOUNDS, { sharedMaxLayer });
+  const editor = useEditorState(PAGE_BOUNDS, {
+    initialTool,
+    sharedMaxLayer,
+  });
+  const editorObjectsRef = useRef(editor.objects);
+  const localImageObjectUrlsRef = useRef<Set<string>>(new Set());
   const [pageZoom, setPageZoom] = useState(1);
   const [comparisonExportRequestId, setComparisonExportRequestId] = useState(0);
+  const [localSaveStatus, setLocalSaveStatus] = useState<string>();
+  const localSaveStatusTimerRef = useRef<number>();
   const activeReactExam =
     reactExams.find((exam) => exam.id === editor.activeExamPresetId) ??
     reactExams[0];
+  const localHandwritingInput = useMemo(
+    () =>
+      getPentestLocalHandwritingInput({
+        roomId: realtimeInk.roomId,
+        pageId: realtimeInk.pageId,
+      }),
+    [realtimeInk.pageId, realtimeInk.roomId],
+  );
   const sharedStrokeIds = useMemo(
     () => new Set(realtimeInk.sharedStrokes.map((stroke) => stroke.id)),
     [realtimeInk.sharedStrokes],
@@ -404,11 +512,15 @@ function EditorPage(): JSX.Element {
             ...editor.objects.filter(
               (object) => !sharedObjectIds.has(object.id),
             ),
+            ...realtimeInk.remoteObjects.filter(
+              (object) => !sharedObjectIds.has(object.id),
+            ),
           ]
         : editor.objects,
     [
       editor.objects,
       realtimeInk.enabled,
+      realtimeInk.remoteObjects,
       realtimeInk.sharedObjects,
       sharedObjectIds,
     ],
@@ -420,6 +532,31 @@ function EditorPage(): JSX.Element {
   const committedObjectSnapshotsRef = useRef<Map<string, string>>(new Map());
   const previousSharedStrokeIdsRef = useRef<Set<string>>(new Set());
   const previousSharedObjectIdsRef = useRef<Set<string>>(new Set());
+  const showLocalSaveStatus = useCallback((message: string) => {
+    setLocalSaveStatus(message);
+    if (localSaveStatusTimerRef.current !== undefined) {
+      window.clearTimeout(localSaveStatusTimerRef.current);
+    }
+    localSaveStatusTimerRef.current = window.setTimeout(() => {
+      setLocalSaveStatus(undefined);
+      localSaveStatusTimerRef.current = undefined;
+    }, 2800);
+  }, []);
+  useEffect(
+    () => () => {
+      if (localSaveStatusTimerRef.current !== undefined) {
+        window.clearTimeout(localSaveStatusTimerRef.current);
+      }
+      for (const url of localImageObjectUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+      localImageObjectUrlsRef.current.clear();
+    },
+    [],
+  );
+  useEffect(() => {
+    editorObjectsRef.current = editor.objects;
+  }, [editor.objects]);
   const localStrokeIds = useMemo(
     () => new Set(editor.strokes.map((stroke) => stroke.id)),
     [editor.strokes],
@@ -468,6 +605,15 @@ function EditorPage(): JSX.Element {
           fontSize: object.fontSize,
           fontFamily: object.fontFamily,
           color: object.color,
+          imageSrc: object.imageSrc,
+          imageFileId: object.imageFileId,
+          imageUrl: object.imageUrl,
+          imageThumbnailUrl: object.imageThumbnailUrl,
+          imageStorageKey: object.imageStorageKey,
+          imageMimeType: object.imageMimeType,
+          imageSizeBytes: object.imageSizeBytes,
+          imageSha256: object.imageSha256,
+          imageStatus: object.imageStatus,
         });
       }
     },
@@ -515,10 +661,7 @@ function EditorPage(): JSX.Element {
     [commitSharedObjects, editor, findSharedObject],
   );
   const handleResizeObject = useCallback(
-    (
-      id: string,
-      patch: Pick<WebGLObject, "x" | "y" | "width" | "height">,
-    ) => {
+    (id: string, patch: Pick<WebGLObject, "x" | "y" | "width" | "height">) => {
       const sharedObject = findSharedObject(id);
       if (!sharedObject) {
         editor.resizeObject(id, patch);
@@ -770,9 +913,7 @@ function EditorPage(): JSX.Element {
   useEffect(() => {
     if (!realtimeInk.enabled) return;
 
-    const currentStrokeIds = new Set(
-      editor.strokes.map((stroke) => stroke.id),
-    );
+    const currentStrokeIds = new Set(editor.strokes.map((stroke) => stroke.id));
     const deletedStrokeIds = Array.from(
       localRealtimeStrokeIdsRef.current,
     ).filter((strokeId) => !currentStrokeIds.has(strokeId));
@@ -802,9 +943,7 @@ function EditorPage(): JSX.Element {
   useEffect(() => {
     if (!realtimeInk.enabled) return;
 
-    const currentObjectIds = new Set(
-      editor.objects.map((object) => object.id),
-    );
+    const currentObjectIds = new Set(editor.objects.map((object) => object.id));
     const deletedObjectIds = Array.from(
       localRealtimeObjectIdsRef.current,
     ).filter((objectId) => !currentObjectIds.has(objectId));
@@ -868,16 +1007,12 @@ function EditorPage(): JSX.Element {
 
     previousSharedStrokeIdsRef.current = new Set(sharedStrokeIds);
     previousSharedObjectIdsRef.current = new Set(sharedObjectIds);
-  }, [
-    editor,
-    realtimeInk.enabled,
-    sharedObjectIds,
-    sharedStrokeIds,
-  ]);
+  }, [editor, realtimeInk.enabled, sharedObjectIds, sharedStrokeIds]);
 
   const handleAddText = useCallback(() => {
     const object = editor.addText();
     if (!object) return;
+
     localRealtimeObjectIdsRef.current.add(object.id);
     committedObjectSnapshotsRef.current.set(object.id, JSON.stringify(object));
     realtimeInk.commitObjects([object]);
@@ -887,13 +1022,86 @@ function EditorPage(): JSX.Element {
   }, []);
   const handleImageFileChange = useCallback(
     (event: Parameters<typeof editor.addImageFromFile>[0]) => {
-      editor.addImageFromFile(event, (object) => {
-        localRealtimeObjectIdsRef.current.add(object.id);
-        committedObjectSnapshotsRef.current.set(
-          object.id,
-          JSON.stringify(object),
-        );
-        realtimeInk.commitObjects([object]);
+      editor.addImageFromFile(event, (object, file) => {
+        if (object.imageSrc?.startsWith("blob:")) {
+          localImageObjectUrlsRef.current.add(object.imageSrc);
+        }
+
+        const uploadImage = async (): Promise<void> => {
+          editor.updateObject(object.id, { imageStatus: "uploading" });
+
+          try {
+            const optimized = await optimizeImageForUpload(file);
+            const uploadFile = optimized.file;
+            const previewDataUrl = await fileToDataUrl(uploadFile);
+            realtimeInk.broadcastImagePreview(
+              {
+                ...object,
+                imageMimeType: uploadFile.type || object.imageMimeType,
+                imageSizeBytes: uploadFile.size,
+                imageStatus: "preview",
+              },
+              previewDataUrl,
+              uploadFile,
+            );
+
+            const key = makeStorageAssetKey({
+              roomId: realtimeInk.roomId,
+              pageId: realtimeInk.pageId,
+              fileId: object.imageFileId ?? object.id,
+              fileName: uploadFile.name,
+              contentType: uploadFile.type || "application/octet-stream",
+            });
+            const upload = await uploadStorageAsset({
+              serverUrl: realtimeInk.serverUrl,
+              key,
+              file: uploadFile,
+            });
+
+            if (!upload.ok) {
+              throw new Error(`Image asset upload failed: ${upload.status}`);
+            }
+
+            const currentObject =
+              editorObjectsRef.current.find((item) => item.id === object.id) ??
+              object;
+            const uploadedObject = getUploadedImageObject({
+              object: currentObject,
+              upload,
+            });
+            if (!uploadedObject) {
+              throw new Error("Image asset upload did not return a URL");
+            }
+
+            editor.updateObject(object.id, {
+              imageSrc: uploadedObject.imageSrc,
+              imageFileId: uploadedObject.imageFileId,
+              imageUrl: uploadedObject.imageUrl,
+              imageStorageKey: uploadedObject.imageStorageKey,
+              imageMimeType: uploadedObject.imageMimeType,
+              imageSizeBytes: uploadedObject.imageSizeBytes,
+              imageSha256: uploadedObject.imageSha256,
+              imageStatus: uploadedObject.imageStatus,
+            });
+
+            if (object.imageSrc?.startsWith("blob:")) {
+              URL.revokeObjectURL(object.imageSrc);
+              localImageObjectUrlsRef.current.delete(object.imageSrc);
+            }
+
+            localRealtimeObjectIdsRef.current.add(uploadedObject.id);
+            committedObjectSnapshotsRef.current.set(
+              uploadedObject.id,
+              JSON.stringify(uploadedObject),
+            );
+            realtimeInk.commitObjects([uploadedObject]);
+          } catch (error) {
+            console.error("Failed to upload image asset", error);
+            editor.updateObject(object.id, { imageStatus: "error" });
+          }
+        };
+
+        void uploadImage();
       });
     },
     [editor, realtimeInk],
@@ -917,12 +1125,17 @@ function EditorPage(): JSX.Element {
     (point: Parameters<typeof editor.beginStroke>[0]) => {
       const stroke = editor.beginStroke(point);
       if (!stroke) return;
+
       activeLocalStrokeIdRef.current = stroke.id;
-      realtimeInk.beginStroke(point, {
-        color: editor.penColor,
-        size: editor.penSize,
-        layer: stroke.layer,
-      }, stroke.id);
+      realtimeInk.beginStroke(
+        point,
+        {
+          color: editor.penColor,
+          size: editor.penSize,
+          layer: stroke.layer,
+        },
+        stroke.id,
+      );
     },
     [editor, realtimeInk],
   );
@@ -977,6 +1190,173 @@ function EditorPage(): JSX.Element {
     deleteSharedSelection();
     editor.deleteSelection();
   }, [deleteSharedSelection, editor]);
+  const handleSaveLocalHandwriting = useCallback(async () => {
+    if (isProductTraceEnabled) {
+      try {
+        const result = await saveProductHandwriting({
+          serverUrl: realtimeInk.serverUrl,
+          roomId: realtimeInk.roomId,
+          pageId: realtimeInk.pageId,
+          actorId: realtimeInk.actorId,
+          actorRole: realtimeInk.actorRole,
+          strokes: visibleStrokes,
+          objects: visibleObjects,
+        });
+
+        if (!result.ok) {
+          throw new Error(`Product handwriting save failed: ${result.status}`);
+        }
+
+        console.info("pentest product handwriting saved", {
+          result,
+          strokesCount: visibleStrokes.length,
+          objectsCount: visibleObjects.length,
+        });
+        showLocalSaveStatus(
+          `제품 trace 저장 완료 (${visibleStrokes.length} strokes / ${visibleObjects.length} objects)`,
+        );
+      } catch (error) {
+        console.error("Failed to save product handwriting trace", error);
+        showLocalSaveStatus("제품 trace 저장 실패");
+      }
+      return;
+    }
+
+    const snapshot = createPentestHandwritingSnapshot({
+      strokes: visibleStrokes,
+      objects: visibleObjects,
+      context: {
+        roomId: realtimeInk.roomId,
+        pageId: realtimeInk.pageId,
+        actorId: realtimeInk.actorId,
+        actorRole: realtimeInk.actorRole,
+      },
+    });
+
+    try {
+      const uploadResult = await savePentestHandwritingSnapshot(
+        localHandwritingInput,
+        snapshot,
+      );
+      console.info("pentest local handwriting snapshot saved", {
+        input: localHandwritingInput,
+        presignedUrl: uploadResult.handwriting.presignedUrl,
+        file: uploadResult.storedFile.file,
+        elementsCount: snapshot.elements.length,
+        strokesCount: visibleStrokes.length,
+        objectsCount: visibleObjects.length,
+        snapshot,
+      });
+      showLocalSaveStatus(
+        `로컬 저장 완료 (${visibleStrokes.length} strokes / ${visibleObjects.length} objects)`,
+      );
+    } catch (error) {
+      console.error("Failed to save local handwriting snapshot", error);
+      showLocalSaveStatus("로컬 저장 실패");
+    }
+  }, [
+    isProductTraceEnabled,
+    localHandwritingInput,
+    realtimeInk.actorId,
+    realtimeInk.actorRole,
+    realtimeInk.pageId,
+    realtimeInk.roomId,
+    realtimeInk.serverUrl,
+    showLocalSaveStatus,
+    visibleObjects,
+    visibleStrokes,
+  ]);
+  const handleLoadLocalHandwriting = useCallback(async () => {
+    if (isProductTraceEnabled) {
+      try {
+        const result = await loadProductHandwriting({
+          serverUrl: realtimeInk.serverUrl,
+          roomId: realtimeInk.roomId,
+          pageId: realtimeInk.pageId,
+          actorId: realtimeInk.actorId,
+          actorRole: realtimeInk.actorRole,
+        });
+
+        if (!result.ok) {
+          throw new Error(`Product handwriting load failed: ${result.status}`);
+        }
+
+        if (!result.loaded) {
+          showLocalSaveStatus("제품 trace 손필기 데이터가 비어 있습니다");
+          return;
+        }
+
+        editor.loadSnapshot({
+          strokes: result.loaded.strokes,
+          objects: result.loaded.objects,
+          activeExamPresetId: undefined,
+        });
+        console.info("pentest product handwriting loaded", {
+          result,
+          elementsCount: result.loaded.handwritingData.elements.length,
+          strokesCount: result.loaded.strokes.length,
+          objectsCount: result.loaded.objects.length,
+        });
+        showLocalSaveStatus(
+          `제품 trace 불러오기 완료 (${result.loaded.strokes.length} strokes / ${result.loaded.objects.length} objects)`,
+        );
+      } catch (error) {
+        console.error("Failed to load product handwriting trace", error);
+        showLocalSaveStatus("제품 trace 불러오기 실패");
+      }
+      return;
+    }
+
+    try {
+      const loaded = loadPentestHandwritingSnapshot(localHandwritingInput);
+      if (!loaded) {
+        showLocalSaveStatus("저장된 로컬 손필기가 없습니다");
+        return;
+      }
+
+      editor.loadSnapshot({
+        strokes: loaded.strokes,
+        objects: loaded.objects,
+        activeExamPresetId: undefined,
+      });
+      console.info("pentest local handwriting snapshot loaded", {
+        input: localHandwritingInput,
+        elementsCount: loaded.handwritingData.elements.length,
+        strokesCount: loaded.strokes.length,
+        objectsCount: loaded.objects.length,
+        handwritingData: loaded.handwritingData,
+      });
+      showLocalSaveStatus(
+        `로컬 불러오기 완료 (${loaded.strokes.length} strokes / ${loaded.objects.length} objects)`,
+      );
+    } catch (error) {
+      console.error("Failed to load local handwriting snapshot", error);
+      showLocalSaveStatus("로컬 불러오기 실패");
+    }
+  }, [
+    editor,
+    isProductTraceEnabled,
+    localHandwritingInput,
+    realtimeInk.actorId,
+    realtimeInk.actorRole,
+    realtimeInk.pageId,
+    realtimeInk.roomId,
+    realtimeInk.serverUrl,
+    showLocalSaveStatus,
+  ]);
+  const handleLoadProductTraceSnapshot = useCallback(
+    (snapshot: { strokes: Stroke[]; objects: WebGLObject[] }) => {
+      editor.loadSnapshot({
+        strokes: snapshot.strokes,
+        objects: snapshot.objects,
+        activeExamPresetId: undefined,
+      });
+      showLocalSaveStatus(
+        `제품 trace 불러오기 완료 (${snapshot.strokes.length} strokes / ${snapshot.objects.length} objects)`,
+      );
+    },
+    [editor, showLocalSaveStatus],
+  );
 
   useEffect(() => {
     if (!realtimeInk.enabled) return undefined;
@@ -1016,6 +1396,12 @@ function EditorPage(): JSX.Element {
         onAddText={handleAddText}
         onAddImage={editor.addImage}
         onImageFileChange={handleImageFileChange}
+        onSaveLocalHandwriting={() => {
+          void handleSaveLocalHandwriting();
+        }}
+        onLoadLocalHandwriting={() => {
+          void handleLoadLocalHandwriting();
+        }}
         onExportComparisonImages={() =>
           setComparisonExportRequestId((value) => value + 1)
         }
@@ -1034,6 +1420,9 @@ function EditorPage(): JSX.Element {
         onRedo={editor.redo}
         canUndo={editor.canUndo}
         canRedo={editor.canRedo}
+        localSaveStatus={localSaveStatus}
+        saveLabel={isProductTraceEnabled ? "제품 저장" : "로컬 저장"}
+        loadLabel={isProductTraceEnabled ? "제품 불러오기" : "로컬 불러오기"}
       />
 
       {realtimeInk.enabled && isInkDebugEnabled ? (
@@ -1058,6 +1447,27 @@ function EditorPage(): JSX.Element {
           remoteDraftCount={realtimeInk.remoteStrokes.length}
           yjsDebug={realtimeInk.yjsDebug}
           renderStats={renderStats}
+        />
+      ) : null}
+
+      {isStorageDebugEnabled ? (
+        <StorageTraceDebugPanel
+          serverUrl={realtimeInk.serverUrl}
+          roomId={realtimeInk.roomId}
+          actorId={realtimeInk.actorId}
+        />
+      ) : null}
+
+      {isProductTracePanelEnabled ? (
+        <ProductTracePanel
+          serverUrl={realtimeInk.serverUrl}
+          roomId={realtimeInk.roomId}
+          pageId={realtimeInk.pageId}
+          actorId={realtimeInk.actorId}
+          actorRole={realtimeInk.actorRole}
+          strokes={visibleStrokes}
+          objects={visibleObjects}
+          onLoadSnapshot={handleLoadProductTraceSnapshot}
         />
       ) : null}
 
@@ -1105,6 +1515,7 @@ function EditorPage(): JSX.Element {
         onTextEditKeyDown={editor.handleTextEditKeyDown}
         onCommitTextEdit={editor.commitTextEdit}
         onRenderStats={isPerfProbeEnabled ? handleRenderStats : undefined}
+        actorId={realtimeInk.actorId}
       />
 
       {isEditorDebugEnabled ? (

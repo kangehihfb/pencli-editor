@@ -1,5 +1,6 @@
 import { OrbitControls } from "@react-three/drei";
 import { addAfterEffect, useThree } from "@react-three/fiber";
+import { recordFrameTime } from "../../../lib/observability";
 import type { ThreeEvent } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ElementRef, FocusEvent, KeyboardEvent } from "react";
@@ -189,6 +190,7 @@ export type EditorSceneProps = {
   renderVisualLayer?: boolean;
   viewportLocked?: boolean;
   onRenderStats?: (stats: EditorRenderStats) => void;
+  actorId?: string;
 };
 
 export type EditorRenderStats = {
@@ -242,6 +244,7 @@ export function EditorScene({
   renderVisualLayer = true,
   viewportLocked = false,
   onRenderStats,
+  actorId = "unknown",
 }: EditorSceneProps) {
   const controlsReference = useRef<ElementRef<typeof OrbitControls>>();
   const { camera, gl, size } = useThree();
@@ -304,6 +307,13 @@ export function EditorScene({
     width: 100,
     height: 100,
   };
+
+  useEffect(() => {
+    // 4-5: frame time 측정 — 500ms마다 SigNoz에 gauge로 전송
+    return addAfterEffect(() => {
+      recordFrameTime(actorId, strokes.length);
+    });
+  }, [actorId, strokes.length]);
 
   useEffect(() => {
     if (!onRenderStats) return;

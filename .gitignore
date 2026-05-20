@@ -4,4 +4,20 @@ dist/
 .DS_Store
 .vite/
 docs/
+
+# SigNoz 공식 레포 클론 (로컬에만 보관)
+observability/signoz/repo/
+
+# 부하 테스트 실행 결과 (타임스탬프 JSON, 스크린샷) - 로컬에만 보관
+export-results/realtime-fleet/
+export-results/realtime-socket/
+export-results/playwright-room-pairs/
+export-results/playwright-room-pairs-report/
+export-results/playwright-room-pairs-results.json
+export-results/playwright-class-session/
+export-results/playwright-class-session-report/
+export-results/playwright-class-session-results.json
+export-results/playwright-stage-canvas-shell-*.json
+export-results/playwright-stage-canvas-shell-*.png
 export-results/pencil-input/local-smoke/
+test-results/

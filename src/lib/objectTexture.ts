@@ -81,6 +81,11 @@ type ImageTextureOptions = {
   backgroundColor?: string;
 };
 
+type LoadedImageTextureOptions = {
+  image: HTMLImageElement;
+  backgroundColor?: string;
+};
+
 function createPlaceholderTexture(backgroundColor = "#ffffff") {
   const canvas = document.createElement("canvas");
   canvas.width = 16;
@@ -89,6 +94,30 @@ function createPlaceholderTexture(backgroundColor = "#ffffff") {
   if (context) {
     context.fillStyle = backgroundColor;
     context.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  return configureTexture(new THREE.CanvasTexture(canvas));
+}
+
+export function createImageObjectTextureFromImage({
+  image,
+  backgroundColor,
+}: LoadedImageTextureOptions) {
+  if (!backgroundColor) {
+    const texture = configureTexture(new THREE.Texture(image));
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+  const imageContext = canvas.getContext("2d");
+
+  if (imageContext) {
+    imageContext.fillStyle = backgroundColor;
+    imageContext.fillRect(0, 0, canvas.width, canvas.height);
+    imageContext.drawImage(image, 0, 0, canvas.width, canvas.height);
   }
 
   return configureTexture(new THREE.CanvasTexture(canvas));

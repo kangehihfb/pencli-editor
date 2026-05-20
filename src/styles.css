@@ -181,10 +181,7 @@ button {
   gap: 12px;
   max-width: 760px;
   color: #05070d;
-  font-family:
-    "Times New Roman",
-    "Noto Serif KR",
-    serif;
+  font-family: "Times New Roman", "Noto Serif KR", serif;
   font-size: 26px;
   letter-spacing: 0;
   line-height: 1.45;
@@ -194,13 +191,7 @@ button {
   padding: 12px 14px;
   border-radius: 6px;
   background: #f6f8fa;
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Monaco,
-    Consolas,
-    monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .react-exam-image {
@@ -287,10 +278,7 @@ button {
   border: none;
   color: #05070d;
   background: transparent;
-  font-family:
-    "Times New Roman",
-    "Noto Serif KR",
-    serif;
+  font-family: "Times New Roman", "Noto Serif KR", serif;
   font-size: 25px;
   line-height: 1;
   text-align: center;
@@ -303,10 +291,7 @@ button {
   place-items: center;
   color: #05070d;
   background: transparent;
-  font-family:
-    "Pretendard",
-    "Noto Sans KR",
-    sans-serif;
+  font-family: "Pretendard", "Noto Sans KR", sans-serif;
   font-size: 18px;
   font-weight: 500;
 }
@@ -430,6 +415,16 @@ button {
   overflow: hidden;
   color: #737a8a;
   font-size: 16px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-save-status {
+  overflow: hidden;
+  max-width: min(32vw, 340px);
+  color: #667085;
+  font-size: 12px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1040,7 +1035,9 @@ button {
   min-height: 160px;
   padding: 8px;
   resize: vertical;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    monospace;
   font-size: 11px;
 }
 
@@ -1677,6 +1674,141 @@ button {
 }
 
 .realtime-ink-status small {
+  overflow: hidden;
+  color: #60717a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storage-trace-debug,
+.product-trace-debug {
+  position: fixed;
+  left: calc(var(--sidebar-width) + 18px);
+  bottom: 18px;
+  z-index: 10022;
+  display: grid;
+  gap: 8px;
+  width: 318px;
+  padding: 12px;
+  border: 1px solid rgba(22, 40, 48, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 24px rgba(20, 31, 38, 0.14);
+  color: #1b2d34;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.product-trace-debug {
+  bottom: 182px;
+}
+
+.storage-trace-debug:not([open]),
+.product-trace-debug:not([open]) {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.storage-trace-debug summary,
+.product-trace-debug summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 168px;
+  padding: 7px 9px;
+  border: 1px solid rgba(22, 40, 48, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 18px rgba(20, 31, 38, 0.12);
+  cursor: pointer;
+  list-style: none;
+}
+
+.storage-trace-debug summary::-webkit-details-marker,
+.product-trace-debug summary::-webkit-details-marker {
+  display: none;
+}
+
+.storage-trace-debug summary strong,
+.product-trace-debug summary strong {
+  font-size: 12px;
+}
+
+.storage-trace-debug summary span,
+.product-trace-debug summary span {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #185fb5;
+  font-weight: 700;
+}
+
+.storage-trace-debug-actions,
+.product-trace-debug-actions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.storage-trace-debug-actions button,
+.product-trace-debug-actions button {
+  min-width: 0;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid #c8d4e4;
+  border-radius: 6px;
+  background: #f8fbff;
+  color: #1d344a;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.storage-trace-debug-actions button:disabled,
+.product-trace-debug-actions button:disabled {
+  color: #98a5b3;
+  cursor: not-allowed;
+}
+
+.storage-trace-debug dl,
+.product-trace-debug dl {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.storage-trace-debug dl div,
+.product-trace-debug dl div {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.storage-trace-debug dt,
+.product-trace-debug dt {
+  color: #60717a;
+  font-weight: 600;
+}
+
+.storage-trace-debug dd,
+.product-trace-debug dd {
+  overflow: hidden;
+  margin: 0;
+  color: #185fb5;
+  font-weight: 800;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storage-trace-debug small,
+.product-trace-debug small {
   overflow: hidden;
   color: #60717a;
   text-overflow: ellipsis;

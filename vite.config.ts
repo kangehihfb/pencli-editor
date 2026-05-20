@@ -134,7 +134,7 @@ function playwrightExportPlugin(): Plugin {
               const shell = page.locator(".stage-canvas-shell");
               const shellBox = await shell.boundingBox();
               const now = new Date();
-              const stamp = now.toISOString().replaceAll(/[.:]/g, "-");
+              const stamp = now.toISOString().replace(/[.:]/g, "-");
               const screenshotFilename = `playwright-stage-canvas-shell-${stamp}.png`;
               const jsonFilename = `playwright-stage-canvas-shell-${stamp}.json`;
               const screenshotPath = path.join(outputDir, screenshotFilename);

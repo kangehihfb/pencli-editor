@@ -50,6 +50,7 @@ type HistorySnapshot = {
 };
 
 type UseEditorStateOptions = {
+  initialTool?: Tool;
   sharedMaxLayer?: number;
 };
 
@@ -104,6 +105,9 @@ type RotateGroupOriginalStroke = GroupRotateOrigin["strokes"][number];
 type ImageObjectInsertInput = {
   fileName: string;
   imageSource: string;
+  fileId: string;
+  fileType: string;
+  fileSize: number;
   aspect: number;
   maxLayer: number;
   drawingBounds?: PointBounds;
@@ -371,7 +375,16 @@ function getResizedGroupObjectNextCenter(
 }
 
 function createInsertedImageObject(input: ImageObjectInsertInput): WebGLObject {
-  const { fileName, imageSource, maxLayer, drawingBounds, aspect } = input;
+  const {
+    fileName,
+    imageSource,
+    fileId,
+    fileType,
+    fileSize,
+    maxLayer,
+    drawingBounds,
+    aspect,
+  } = input;
   const safeAspect = getSafeImageAspect(aspect);
   const width = 180;
   return {
@@ -384,6 +397,10 @@ function createInsertedImageObject(input: ImageObjectInsertInput): WebGLObject {
     layer: maxLayer + 1,
     imageSrc: imageSource,
     imageName: fileName,
+    imageFileId: fileId,
+    imageMimeType: fileType,
+    imageSizeBytes: fileSize,
+    imageStatus: "local",
   };
 }
 
@@ -582,7 +599,9 @@ function useEditorState(
   const undoHistoryReference = useRef<HistorySnapshot[]>([]);
   const redoHistoryReference = useRef<HistorySnapshot[]>([]);
   const activeStrokeIdReference = useRef<string | undefined>();
-  const [tool, setTool] = useState<Tool>("answer");
+  const [tool, setTool] = useState<Tool>(
+    () => options?.initialTool ?? "answer",
+  );
   const [penColor, setPenColor] = useState("#183f3a");
   const [penSize, setPenSize] = useState(3.5);
   const [textFontFamily, setTextFontFamily] = useState(
@@ -720,6 +739,25 @@ function useEditorState(
     setHistoryRevision((value) => value + 1);
   }, [createHistorySnapshot, restoreHistorySnapshot]);
 
+  const loadSnapshot = useCallback(
+    (snapshot: HistorySnapshot): void => {
+      if (readonly) return;
+      if (strokes.length > 0 || objects.length > 0 || activeExamPresetId) {
+        recordHistory();
+      }
+      restoreHistorySnapshot(snapshot);
+      setHistoryRevision((value) => value + 1);
+    },
+    [
+      activeExamPresetId,
+      objects.length,
+      readonly,
+      recordHistory,
+      restoreHistorySnapshot,
+      strokes.length,
+    ],
+  );
+
   const addText = (): WebGLObject | undefined => {
     if (readonly) return undefined;
     recordHistory();
@@ -745,7 +783,7 @@ function useEditorState(
 
   const addImageFromFile = (
     event: ChangeEvent<HTMLInputElement>,
-    onObjectCreated?: (object: WebGLObject) => void,
+    onObjectCreated?: (object: WebGLObject, file: File) => void,
   ): void => {
     if (readonly) return;
     const inputElement = event.currentTarget;
@@ -753,11 +791,16 @@ function useEditorState(
     inputElement.value = "";
     if (!file) return;
 
+    const objectUrl = URL.createObjectURL(file);
+
     const addDecodedImage = (imageSource: string, aspect: number): void => {
       recordHistory();
       const object = createInsertedImageObject({
         fileName: file.name,
         imageSource,
+        fileId: makeId("file"),
+        fileType: file.type || "application/octet-stream",
+        fileSize: file.size,
         aspect,
         maxLayer,
         drawingBounds,
@@ -768,24 +811,15 @@ function useEditorState(
       setGroupSelection([{ type: "object", id: object.id }]);
       setEditingText(undefined);
       setTool("select");
-      onObjectCreated?.(object);
+      onObjectCreated?.(object, file);
     };
 
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      if (typeof reader.result !== "string") return;
-
-      const image = new Image();
-      image.decoding = "async";
-      image.addEventListener("load", () => {
-        addDecodedImage(
-          reader.result as string,
-          image.naturalWidth / image.naturalHeight,
-        );
-      });
-      image.src = reader.result;
+    const image = new Image();
+    image.decoding = "async";
+    image.addEventListener("load", () => {
+      addDecodedImage(objectUrl, image.naturalWidth / image.naturalHeight);
     });
-    reader.readAsDataURL(file);
+    image.src = objectUrl;
   };
 
   const clearAll = (): void => {
@@ -1108,6 +1142,15 @@ function useEditorState(
         | "fontSize"
         | "fontFamily"
         | "color"
+        | "imageSrc"
+        | "imageFileId"
+        | "imageUrl"
+        | "imageThumbnailUrl"
+        | "imageStorageKey"
+        | "imageMimeType"
+        | "imageSizeBytes"
+        | "imageSha256"
+        | "imageStatus"
       >
     >,
   ): void => {
@@ -1576,6 +1619,7 @@ function useEditorState(
     removeElementsById,
     undo,
     redo,
+    loadSnapshot,
     beginStroke,
     appendStrokePoint,
     endStroke,

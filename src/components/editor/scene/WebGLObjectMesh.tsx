@@ -1,16 +1,17 @@
 import { Text } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
 import { useThree } from "@react-three/fiber";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
 import {
   EDITOR_TEXT_TROIKA_PRELOAD_CHARACTERS,
   getEditorTextTroikaFontUrl,
 } from "../../../lib/editorTextFonts";
 import {
-  createImageObjectTexture,
+  createImageObjectTextureFromImage,
   measureTextObject,
 } from "../../../lib/objectTexture";
+import { getImageRenderSource } from "../../../lib/imageAssets";
 import { layerToZ } from "../../../lib/sceneMath";
 import type { WebGLObject } from "../../../types/editor";
 import {
@@ -20,6 +21,11 @@ import {
 } from "./SelectionVisuals";
 
 const troikaTextSdfGlyphSize = 512;
+
+type LoadedImage = {
+  source: string;
+  image: HTMLImageElement;
+};
 
 type WebGLObjectMeshProperties = {
   object: WebGLObject;
@@ -84,6 +90,9 @@ export function WebGLObjectMesh({
 
   const textValue =
     object.kind === "text" ? (draftText ?? object.text ?? "") : "";
+  const imageSource =
+    object.kind === "image" ? getImageRenderSource(object) : undefined;
+  const [loadedImage, setLoadedImage] = useState<LoadedImage | undefined>();
   const visualSize = useMemo(() => {
     if (object.kind !== "text" || draftText === undefined) {
       return {
@@ -103,21 +112,60 @@ export function WebGLObjectMesh({
     textValue,
   ]);
 
+  useEffect(() => {
+    if (object.kind !== "image" || !imageSource) {
+      setLoadedImage(undefined);
+      return undefined;
+    }
+
+    let canceled = false;
+    const image = new Image();
+    image.decoding = "async";
+    if (/^https?:/i.test(imageSource)) {
+      image.crossOrigin = "anonymous";
+    }
+
+    const handleLoad = (): void => {
+      if (canceled) return;
+      setLoadedImage({ source: imageSource, image });
+    };
+    const handleError = (): void => {
+      if (canceled) return;
+      setLoadedImage((previous) =>
+        previous?.source === imageSource ? undefined : previous,
+      );
+    };
+
+    image.addEventListener("load", handleLoad);
+    image.addEventListener("error", handleError);
+    image.src = imageSource;
+
+    return () => {
+      canceled = true;
+      image.removeEventListener("load", handleLoad);
+      image.removeEventListener("error", handleError);
+    };
+  }, [imageSource, object.kind]);
+
   const texture = useMemo(() => {
-    if (object.kind === "text") return undefined;
+    if (object.kind !== "image" || !loadedImage) return undefined;
     if (object.kind === "image") {
-      return createImageObjectTexture({
-        imageSrc: object.imageSrc,
+      return createImageObjectTextureFromImage({
+        image: loadedImage.image,
         backgroundColor: object.imageBackground,
       });
     }
     return undefined;
-  }, [object.imageBackground, object.imageSrc, object.kind]);
+  }, [loadedImage, object.imageBackground, object.kind]);
+  useEffect(() => () => texture?.dispose(), [texture]);
+
   const shouldRenderVisual =
     renderVisual && (!editing || object.kind === "text");
   const shouldRenderImageTexture =
-    shouldRenderVisual && object.kind === "image";
+    shouldRenderVisual && object.kind === "image" && Boolean(texture);
   const shouldRenderTroikaText = shouldRenderVisual && object.kind === "text";
+  const canSelectSurface =
+    !isExamImage && (object.kind !== "image" || shouldRenderImageTexture);
   const textFontUrl =
     object.kind === "text"
       ? getEditorTextTroikaFontUrl(object.fontFamily)
@@ -132,7 +180,7 @@ export function WebGLObjectMesh({
       <mesh
         name={`${objectSceneName}:surface`}
         renderOrder={object.layer * 10}
-        onPointerDown={isExamImage ? undefined : onSelect}
+        onPointerDown={canSelectSurface ? onSelect : undefined}
         onDoubleClick={
           isExamImage || object.kind !== "text"
             ? undefined

@@ -28,6 +28,13 @@ type FrameSummary = {
   uptimeMs: number;
 };
 
+type LongTaskSummary = {
+  count: number;
+  totalDurationMs: number;
+  maxDurationMs: number;
+  lastDurationMs: number;
+};
+
 type MemorySummary = {
   usedJSHeapSize: number;
   totalJSHeapSize: number;
@@ -54,6 +61,7 @@ type RealtimeInkPerfSnapshot = {
   canvas: {
     strokes: number;
     strokePoints: number;
+    strokeHash: string;
     averagePointsPerStroke: number;
     objects: number;
     images: number;
@@ -62,6 +70,7 @@ type RealtimeInkPerfSnapshot = {
   };
   realtime: RealtimeInkYjsDebug;
   frame: FrameSummary;
+  longTasks: LongTaskSummary;
   webgl: EditorRenderStats | undefined;
 };
 
@@ -77,6 +86,10 @@ type RealtimeInkPerfProbePanelProps = {
   renderStats: EditorRenderStats | undefined;
 };
 
+function isDataUrl(value: string | undefined): value is string {
+  return Boolean(value?.startsWith("data:"));
+}
+
 declare global {
   interface Window {
     __realtimeInkPerfSnapshot?: RealtimeInkPerfSnapshot;
@@ -84,6 +97,12 @@ declare global {
 }
 
 const frameWindowMs = 10_000;
+const emptyLongTaskSummary: LongTaskSummary = {
+  count: 0,
+  totalDurationMs: 0,
+  maxDurationMs: 0,
+  lastDurationMs: 0,
+};
 const emptyFrameSummary: FrameSummary = {
   fps: 0,
   minFps: 0,
@@ -195,10 +214,50 @@ function countStrokePoints(strokes: Stroke[]): number {
   return strokes.reduce((sum, stroke) => sum + stroke.points.length, 0);
 }
 
+function normalizeTraceNumber(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round((value ?? 0) * 100) / 100;
+}
+
+function hashText(value: string): string {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 33 + (value.codePointAt(index) ?? 0)) % 4_294_967_291;
+  }
+  return hash.toString(36);
+}
+
+function makeStrokeSignature(stroke: Stroke): string {
+  const points = stroke.points
+    .map(
+      (point) =>
+        `${normalizeTraceNumber(point.x)},${normalizeTraceNumber(point.y)}`,
+    )
+    .join(";");
+  return [
+    stroke.id,
+    stroke.color,
+    normalizeTraceNumber(stroke.size),
+    normalizeTraceNumber(stroke.rotation),
+    stroke.layer,
+    points,
+  ].join("|");
+}
+
+function makeStrokeHash(strokes: Stroke[]): string {
+  if (strokes.length === 0) return "empty";
+  const signature = strokes
+    .map((stroke) => makeStrokeSignature(stroke))
+    .sort()
+    .join("\n");
+  return hashText(signature);
+}
+
 function countImageBytes(objects: WebGLObject[]): number {
   return objects.reduce((sum, object) => {
-    if (object.kind !== "image" || !object.imageSrc) return sum;
-    return sum + object.imageSrc.length;
+    const imageSource = object.imageSrc;
+    if (object.kind !== "image" || !isDataUrl(imageSource)) return sum;
+    return sum + imageSource.length;
   }, 0);
 }
 
@@ -239,8 +298,10 @@ export function RealtimeInkPerfProbePanel(
     totalLong200: 0,
   });
   const [frameSummary, setFrameSummary] = useState(emptyFrameSummary);
+  const [longTaskSummary, setLongTaskSummary] = useState(emptyLongTaskSummary);
   const [memorySummary, setMemorySummary] = useState(getMemorySummary);
   const pointCount = useMemo(() => countStrokePoints(strokes), [strokes]);
+  const strokeHash = useMemo(() => makeStrokeHash(strokes), [strokes]);
   const averagePointsPerStroke =
     strokes.length > 0 ? pointCount / strokes.length : 0;
   const imageBytes = useMemo(() => countImageBytes(objects), [objects]);
@@ -287,6 +348,40 @@ export function RealtimeInkPerfProbePanel(
     return () => window.cancelAnimationFrame(animationFrame);
   }, []);
 
+  useEffect(() => {
+    if (!("PerformanceObserver" in window)) return undefined;
+
+    let observer: PerformanceObserver | undefined;
+    try {
+      observer = new PerformanceObserver((list) => {
+        setLongTaskSummary((previous) => {
+          const entries = list.getEntries();
+          if (entries.length === 0) return previous;
+          const totalDurationMs = entries.reduce(
+            (sum, entry) => sum + entry.duration,
+            0,
+          );
+          const maxDurationMs = Math.max(
+            previous.maxDurationMs,
+            ...entries.map((entry) => entry.duration),
+          );
+          return {
+            count: previous.count + entries.length,
+            totalDurationMs: previous.totalDurationMs + totalDurationMs,
+            maxDurationMs,
+            lastDurationMs:
+              entries[entries.length - 1]?.duration ?? previous.lastDurationMs,
+          };
+        });
+      });
+      observer.observe({ entryTypes: ["longtask"] });
+    } catch {
+      return undefined;
+    }
+
+    return () => observer?.disconnect();
+  }, []);
+
   const snapshot = useMemo<RealtimeInkPerfSnapshot>(
     () => ({
       collectedAt: new Date().toISOString(),
@@ -308,6 +403,7 @@ export function RealtimeInkPerfProbePanel(
       canvas: {
         strokes: strokes.length,
         strokePoints: pointCount,
+        strokeHash,
         averagePointsPerStroke,
         objects: objects.length,
         images: objects.filter((object) => object.kind === "image").length,
@@ -316,6 +412,7 @@ export function RealtimeInkPerfProbePanel(
       },
       realtime: yjsDebug,
       frame: frameSummary,
+      longTasks: longTaskSummary,
       webgl: renderStats,
     }),
     [
@@ -324,6 +421,7 @@ export function RealtimeInkPerfProbePanel(
       averagePointsPerStroke,
       frameSummary,
       imageBytes,
+      longTaskSummary,
       memorySummary,
       objects,
       pointCount,
@@ -331,6 +429,7 @@ export function RealtimeInkPerfProbePanel(
       renderStats,
       roomId,
       status,
+      strokeHash,
       strokes.length,
       yjsDebug,
     ],
@@ -346,7 +445,9 @@ export function RealtimeInkPerfProbePanel(
   }, [snapshot]);
 
   const handleCopy = useCallback(() => {
-    void window.navigator.clipboard?.writeText(JSON.stringify(snapshot, null, 2));
+    void window.navigator.clipboard?.writeText(
+      JSON.stringify(snapshot, null, 2),
+    );
   }, [snapshot]);
 
   const handleDownload = useCallback(() => {
@@ -390,8 +491,14 @@ export function RealtimeInkPerfProbePanel(
         <div>
           <dt>긴 프레임 50/100/200</dt>
           <dd>
-            {frameSummary.long50}/{frameSummary.long100}/
-            {frameSummary.long200}
+            {frameSummary.long50}/{frameSummary.long100}/{frameSummary.long200}
+          </dd>
+        </div>
+        <div>
+          <dt>Long task</dt>
+          <dd>
+            {formatNumber(longTaskSummary.count)}/
+            {formatMs(longTaskSummary.maxDurationMs)}
           </dd>
         </div>
         <div>

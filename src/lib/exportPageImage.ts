@@ -1,4 +1,5 @@
 import type { Stroke, WebGLObject } from "../types/editor";
+import { getImageRenderSource } from "./imageAssets";
 
 export type PageExportState = {
   strokes: Stroke[];
@@ -130,7 +131,7 @@ export async function createSerializablePageExportState(
     objects: await Promise.all(
       state.objects.map(async (object) => ({
         ...object,
-        imageSrc: await resolveExportImageSource(object.imageSrc),
+        imageSrc: await resolveExportImageSource(getImageRenderSource(object)),
       })),
     ),
   };

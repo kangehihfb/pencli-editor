@@ -17,6 +17,7 @@ export type RealtimeInkConfiguration = {
   token: string;
   actorId: string;
   actorRole: RealtimeInkRole;
+  receiveTraceSampleRate: number;
 };
 
 export type StrokeStyle = {
@@ -39,11 +40,28 @@ export type CollaborativeObject = WebGLObject & {
   updatedAt: number;
 };
 
+export type CollaborativeAsset = {
+  fileId: string;
+  url: string;
+  thumbnailUrl?: string;
+  storageKey?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  sizeBytes?: number;
+  sha256?: string;
+  pageId: string;
+  actorId: string;
+  actorRole: RealtimeInkRole;
+  updatedAt: number;
+};
+
 export type RealtimeInkYjsDebug = {
   strokeCount: number;
   remoteStrokeCount: number;
   objectCount: number;
   remoteObjectCount: number;
+  assetCount: number;
   localUpdateCount: number;
   remoteUpdateCount: number;
   sentUpdateCount: number;
@@ -104,7 +122,35 @@ export type RealtimeInkMessage =
       roomId: string;
       pageId: string;
       actorId: string;
-      update: number[];
+      update?: number[];
+      updateBase64?: string;
+    }
+  | {
+      protocol: typeof protocolName;
+      version: 1;
+      type: "image:ready";
+      roomId: string;
+      pageId: string;
+      actorId: string;
+      actorRole: RealtimeInkRole;
+      object: WebGLObject;
+      asset: Omit<
+        CollaborativeAsset,
+        "pageId" | "actorId" | "actorRole" | "updatedAt"
+      >;
+    }
+  | {
+      protocol: typeof protocolName;
+      version: 1;
+      type: "image:preview";
+      roomId: string;
+      pageId: string;
+      actorId: string;
+      actorRole: RealtimeInkRole;
+      object: WebGLObject;
+      previewDataUrl: string;
+      previewBytes: number;
+      mimeType?: string;
     }
   | {
       protocol: typeof protocolName;
@@ -124,7 +170,8 @@ export type RealtimeInkMessage =
       actorId: string;
       targetActorId: string;
       requestId: string;
-      update: number[];
+      update?: number[];
+      updateBase64?: string;
     };
 
 export const protocolName = "pentest-ink";
@@ -135,17 +182,20 @@ export const defaultRemoteLayer = 50;
 export const localYjsOrigin = "pentest-ink-local-yjs";
 export const remoteYjsOrigin = "pentest-ink-remote-yjs";
 
+const strokePointCoordinateScale = 100;
 const defaultInkServerUrl = "http://localhost:3000";
 const defaultActivityId = "local-activity";
 const defaultQuestionId = "question-1";
 const defaultPageId = "page-1";
 const defaultRole: RealtimeInkRole = "student";
+const defaultReceiveTraceSampleRate = 1;
 
 export const initialYjsDebug: RealtimeInkYjsDebug = {
   strokeCount: 0,
   remoteStrokeCount: 0,
   objectCount: 0,
   remoteObjectCount: 0,
+  assetCount: 0,
   localUpdateCount: 0,
   remoteUpdateCount: 0,
   sentUpdateCount: 0,
@@ -164,6 +214,25 @@ export function makeRealtimeId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random()
     .toString(36)
     .slice(2)}`;
+}
+
+export function normalizeStrokePointCoordinate(value: number): number {
+  if (!Number.isFinite(value)) return value;
+
+  const rounded =
+    Math.round(value * strokePointCoordinateScale) / strokePointCoordinateScale;
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+export function normalizeStrokePoint(point: Point2D): Point2D {
+  return {
+    x: normalizeStrokePointCoordinate(point.x),
+    y: normalizeStrokePointCoordinate(point.y),
+  };
+}
+
+export function normalizeStrokePoints(points: Point2D[]): Point2D[] {
+  return points.map(normalizeStrokePoint);
 }
 
 export function readRealtimeInkConfiguration(): RealtimeInkConfiguration {
@@ -188,11 +257,50 @@ export function readRealtimeInkConfiguration(): RealtimeInkConfiguration {
     token: parameters.get("inkToken") ?? "",
     actorId: parameters.get("inkActor") ?? getOrCreateSessionActorId(),
     actorRole,
+    receiveTraceSampleRate: readSampleRate(
+      parameters.get("inkTraceReceiveSampleRate"),
+      defaultReceiveTraceSampleRate,
+    ),
   };
+}
+
+function readSampleRate(value: string | null, fallback: number): number {
+  if (value === null) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(1, Math.max(0, parsed));
 }
 
 export function encodeMessage(message: RealtimeInkMessage): ArrayBuffer {
   return toExactArrayBuffer(new TextEncoder().encode(JSON.stringify(message)));
+}
+
+export function encodeYjsUpdateBase64(update: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < update.length; index += chunkSize) {
+    const chunk = update.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+export function decodeYjsUpdateBytes(
+  message: Extract<
+    RealtimeInkMessage,
+    { type: "yjs:update" | "yjs:sync-response" }
+  >,
+): Uint8Array | undefined {
+  if (message.updateBase64) {
+    const binary = atob(message.updateBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+
+  return message.update ? new Uint8Array(message.update) : undefined;
 }
 
 export function decodeMessage(data: unknown): RealtimeInkMessage | undefined {

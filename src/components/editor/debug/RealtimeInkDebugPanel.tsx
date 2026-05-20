@@ -53,6 +53,10 @@ export function RealtimeInkDebugPanel(
           </dd>
         </div>
         <div>
+          <dt>assets</dt>
+          <dd>{yjsDebug.assetCount}</dd>
+        </div>
+        <div>
           <dt>y updates</dt>
           <dd>
             {yjsDebug.sentUpdateCount}/{yjsDebug.appliedUpdateCount}

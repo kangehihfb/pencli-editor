@@ -3,6 +3,7 @@ import {
   ChevronsUp,
   Download,
   Eraser,
+  FolderOpen,
   GripVertical,
   Hand,
   ImagePlus,
@@ -11,6 +12,7 @@ import {
   PenLine,
   Redo2,
   Scaling,
+  Save,
   Trash2,
   Type,
   Undo2,
@@ -44,6 +46,8 @@ type EditorToolbarProperties = {
   onAddText: () => void;
   onAddImage: () => void;
   onImageFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onSaveLocalHandwriting: () => void;
+  onLoadLocalHandwriting: () => void;
   onExportComparisonImages: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -56,6 +60,9 @@ type EditorToolbarProperties = {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  localSaveStatus?: string;
+  saveLabel?: string;
+  loadLabel?: string;
 };
 
 const PRESET_PEN_COLORS = [
@@ -100,6 +107,8 @@ export function EditorToolbar({
   onAddText,
   onAddImage,
   onImageFileChange,
+  onSaveLocalHandwriting,
+  onLoadLocalHandwriting,
   onExportComparisonImages,
   onZoomIn,
   onZoomOut,
@@ -112,14 +121,20 @@ export function EditorToolbar({
   onRedo,
   canUndo,
   canRedo,
+  localSaveStatus,
+  saveLabel = "로컬 저장",
+  loadLabel = "로컬 불러오기",
 }: EditorToolbarProperties) {
   const [toolTabOffset, setToolTabOffset] = useState({ x: 0, y: 0 });
-  const dragStateReference = useRef<{
-    startX: number;
-    startY: number;
-    originX: number;
-    originY: number;
-  } | undefined>(undefined);
+  const dragStateReference = useRef<
+    | {
+        startX: number;
+        startY: number;
+        originX: number;
+        originY: number;
+      }
+    | undefined
+  >(undefined);
 
   const handleToolTabDragStart = (
     event: ReactPointerEvent<HTMLButtonElement>,
@@ -174,6 +189,11 @@ export function EditorToolbar({
       <div className="lesson-header-left">
         <strong className="lesson-title">학습하기</strong>
         <span className="lesson-divider" />
+        {localSaveStatus ? (
+          <span className="local-save-status" aria-live="polite">
+            {localSaveStatus}
+          </span>
+        ) : null}
       </div>
       <input
         ref={imageInputRef}
@@ -353,6 +373,12 @@ export function EditorToolbar({
             </ToolButton>
             <ToolButton label="이미지 추가" onClick={onAddImage}>
               <ImagePlus size={18} />
+            </ToolButton>
+            <ToolButton label={saveLabel} onClick={onSaveLocalHandwriting}>
+              <Save size={18} />
+            </ToolButton>
+            <ToolButton label={loadLabel} onClick={onLoadLocalHandwriting}>
+              <FolderOpen size={18} />
             </ToolButton>
             <ToolButton
               label="비교 이미지 저장"
