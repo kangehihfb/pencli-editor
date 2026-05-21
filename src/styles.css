@@ -542,6 +542,8 @@ button {
 }
 
 .handwriting-tool-tab {
+  --tool-control-size: 36px;
+  --tool-swatch-size: 24px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -637,13 +639,21 @@ button {
 .icon-button {
   position: relative;
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: var(--tool-control-size);
+  height: var(--tool-control-size);
+  min-width: var(--tool-control-size);
+  min-height: var(--tool-control-size);
+  flex: 0 0 var(--tool-control-size);
   place-items: center;
   padding: 0;
   border-radius: 7px;
+  appearance: none;
+  -webkit-appearance: none;
   color: #62707f;
   background: transparent;
+  line-height: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .icon-button:hover {
@@ -663,7 +673,7 @@ button {
 .icon-button.active {
   color: #16202a;
   background: #edf2f4;
-  box-shadow: inset 0 -2px 0 #253440;
+  box-shadow: inset 0 0 0 1px rgba(37, 52, 64, 0.1);
 }
 
 .tool-chip-button {
@@ -718,11 +728,11 @@ button {
 }
 
 .palette-swatch {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  min-height: 24px;
-  flex: 0 0 auto;
+  width: var(--tool-swatch-size);
+  height: var(--tool-swatch-size);
+  min-width: var(--tool-swatch-size);
+  min-height: var(--tool-swatch-size);
+  flex: 0 0 var(--tool-swatch-size);
   padding: 0;
   border: 1px solid rgba(32, 36, 45, 0.08);
   border-radius: 999px;
@@ -748,11 +758,11 @@ button {
 .color-picker-wrap {
   position: relative;
   display: inline-grid;
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  min-height: 24px;
-  flex: 0 0 auto;
+  width: var(--tool-swatch-size);
+  height: var(--tool-swatch-size);
+  min-width: var(--tool-swatch-size);
+  min-height: var(--tool-swatch-size);
+  flex: 0 0 var(--tool-swatch-size);
   place-items: center;
   overflow: hidden;
   border: 1px solid rgba(32, 36, 45, 0.08);
@@ -782,13 +792,22 @@ button {
 
 .stroke-size-button {
   display: grid;
-  width: 38px;
-  height: 32px;
+  width: var(--tool-control-size);
+  height: var(--tool-control-size);
+  min-width: var(--tool-control-size);
+  min-height: var(--tool-control-size);
+  flex: 0 0 var(--tool-control-size);
   place-items: center;
+  padding: 0;
   border: none;
   border-radius: 7px;
+  appearance: none;
+  -webkit-appearance: none;
   background: transparent;
   cursor: pointer;
+  line-height: 0;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .stroke-size-button:hover {
@@ -1487,6 +1506,8 @@ button {
   }
 
   .handwriting-tool-tab {
+    --tool-control-size: 32px;
+    --tool-swatch-size: 20px;
     width: 100%;
     max-width: none;
     min-height: 0;
@@ -1519,23 +1540,23 @@ button {
   }
 
   .palette-swatch {
-    width: 20px;
-    height: 20px;
+    width: var(--tool-swatch-size);
+    height: var(--tool-swatch-size);
   }
 
   .color-picker-wrap {
-    width: 24px;
-    height: 24px;
+    width: var(--tool-swatch-size);
+    height: var(--tool-swatch-size);
   }
 
   .stroke-size-button {
-    width: 32px;
-    height: 30px;
+    width: var(--tool-control-size);
+    height: var(--tool-control-size);
   }
 
   .icon-button {
-    width: 32px;
-    height: 32px;
+    width: var(--tool-control-size);
+    height: var(--tool-control-size);
   }
 
   .stage-topbar {
@@ -1697,6 +1718,8 @@ button {
   }
 
   .handwriting-tool-tab {
+    --tool-control-size: 31px;
+    --tool-swatch-size: 20px;
     gap: 5px;
     padding: 5px;
   }
@@ -1706,8 +1729,8 @@ button {
   }
 
   .primary-tool-group .icon-button {
-    width: 31px;
-    height: 31px;
+    width: var(--tool-control-size);
+    height: var(--tool-control-size);
   }
 
   .color-group {
