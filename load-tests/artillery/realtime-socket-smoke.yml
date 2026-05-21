@@ -1,0 +1,66 @@
+config:
+  target: "http://localhost:3001"
+  engines:
+    socketio: {}
+
+  phases:
+    - name: smoke
+      duration: 1
+      arrivalRate: 1
+
+  variables:
+    roomId: "load-test-artillery-smoke"
+    pageId: "page-1"
+
+  socketio:
+    path: "/handwriting/socket.io/"
+    transports:
+      - websocket
+    query:
+      token: "{{ $env.INK_TOKEN }}"
+
+scenarios:
+  - name: "realtime-ink-server-smoke"
+    engine: socketio
+    flow:
+      - emit:
+          channel: "join-room"
+          data: "{{ roomId }}"
+      - emit:
+          channel: "server-broadcast"
+          data:
+            - "{{ roomId }}"
+            - >
+              {
+                "protocol": "realtime-ink",
+                "version": 1,
+                "type": "ink:stroke:start",
+                "roomId": "{{ roomId }}",
+                "pageId": "{{ pageId }}",
+                "actorId": "artillery-smoke-user",
+                "actorRole": "student",
+                "strokeId": "stroke-smoke",
+                "color": "#e74c3c",
+                "size": 3,
+                "layer": 0,
+                "point": { "x": 120, "y": 120 }
+              }
+      - emit:
+          channel: "server-broadcast"
+          data:
+            - "{{ roomId }}"
+            - >
+              {
+                "protocol": "realtime-ink",
+                "version": 1,
+                "type": "ink:stroke:end",
+                "roomId": "{{ roomId }}",
+                "pageId": "{{ pageId }}",
+                "actorId": "artillery-smoke-user",
+                "actorRole": "student",
+                "strokeId": "stroke-smoke",
+                "points": [
+                  { "x": 120, "y": 120 },
+                  { "x": 160, "y": 160 }
+                ]
+              }

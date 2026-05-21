@@ -1,7 +1,13 @@
 import type { ThreeEvent } from "@react-three/fiber";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import * as THREE from "three";
-import { getPointBounds, getStrokeRenderPoints, layerToZ } from "../../../lib/sceneMath";
+import {
+  getPointBounds,
+  getStableActiveStrokeRenderPoints,
+  getStrokeRenderPoints,
+  layerToZ,
+  type ActiveStrokeRenderCache,
+} from "../../../lib/sceneMath";
 import type { Point2D, Stroke } from "../../../types/editor";
 import {
   ResizeHandleMarker,
@@ -104,6 +110,11 @@ export function StrokeMesh({
   onMoveStart,
 }: StrokeMeshProperties) {
   const strokeSceneName = `stroke:${stroke.id}`;
+  const activeRenderCacheReference = useRef<ActiveStrokeRenderCache>({
+    strokeId: undefined,
+    frozenPointCount: 0,
+    frozenRenderPoints: [],
+  });
   const bounds = useMemo(() => getPointBounds(stroke.points), [stroke.points]);
   const localPoints = useMemo(
     () =>
@@ -115,10 +126,20 @@ export function StrokeMesh({
   );
   const geometry = useMemo(() => {
     if (localPoints.length < 2) return undefined;
-    const sampledPoints = getStrokeRenderPoints(localPoints, {
-      activelyDrawing,
-      strokeSize: stroke.size,
-    });
+    const sampledPoints = activelyDrawing
+      ? getStableActiveStrokeRenderPoints({
+          strokeId: stroke.id,
+          points: stroke.points,
+          strokeSize: stroke.size,
+          cache: activeRenderCacheReference.current,
+        }).map((point) => ({
+          x: point.x - bounds.centerX,
+          y: point.y - bounds.centerY,
+        }))
+      : getStrokeRenderPoints(localPoints, {
+          activelyDrawing,
+          strokeSize: stroke.size,
+        });
     if (sampledPoints.length < 2) return undefined;
     const pickerRadius = Math.max(stroke.size * 1.45, stroke.size + 1.8);
     const visual = createStrokeRibbonGeometry(
@@ -138,7 +159,16 @@ export function StrokeMesh({
           )
         : undefined,
     };
-  }, [activelyDrawing, hitTestEnabled, localPoints, stroke.size]);
+  }, [
+    activelyDrawing,
+    bounds.centerX,
+    bounds.centerY,
+    hitTestEnabled,
+    localPoints,
+    stroke.id,
+    stroke.points,
+    stroke.size,
+  ]);
 
   return (
     <group

@@ -11,7 +11,6 @@ import {
   MousePointer2,
   PenLine,
   Redo2,
-  Scaling,
   Save,
   Trash2,
   Type,
@@ -35,13 +34,11 @@ type EditorToolbarProperties = {
   readonly: boolean;
   penColor: string;
   textFontFamily: string;
-  textFontSize: number;
   penSize: number;
   imageInputRef: RefObject<HTMLInputElement>;
   onToolChange: (tool: Tool) => void;
   onPenColorChange: (color: string) => void;
   onTextFontFamilyChange: (fontFamily: string) => void;
-  onTextFontSizeChange: (fontSize: number) => void;
   onPenSizeChange: (size: number) => void;
   onAddText: () => void;
   onAddImage: () => void;
@@ -96,13 +93,11 @@ export function EditorToolbar({
   readonly,
   penColor,
   textFontFamily,
-  textFontSize,
   penSize,
   imageInputRef,
   onToolChange,
   onPenColorChange,
   onTextFontFamilyChange,
-  onTextFontSizeChange,
   onPenSizeChange,
   onAddText,
   onAddImage,
@@ -249,7 +244,7 @@ export function EditorToolbar({
 
           <span className="toolbar-separator" />
 
-          <div className="tool-tab-group">
+          <div className="tool-tab-group primary-tool-group">
             <ToolButton
               active={tool === "answer"}
               label="답안 입력"
@@ -284,6 +279,12 @@ export function EditorToolbar({
               onClick={() => onToolChange("erase")}
             >
               <Eraser size={18} />
+            </ToolButton>
+            <ToolButton label="텍스트 추가" onClick={onAddText}>
+              <Type size={18} />
+            </ToolButton>
+            <ToolButton label="이미지 추가" onClick={onAddImage}>
+              <ImagePlus size={18} />
             </ToolButton>
           </div>
 
@@ -339,7 +340,7 @@ export function EditorToolbar({
 
           <span className="toolbar-separator" />
 
-          <div className="tool-tab-group">
+          <div className="tool-tab-group text-option-group">
             <label className="font-family-control" title="텍스트 폰트">
               <Type size={16} />
               <select
@@ -354,26 +355,11 @@ export function EditorToolbar({
                 ))}
               </select>
             </label>
-            <label className="font-size-control" title="텍스트 크기">
-              <Scaling size={16} />
-              <input
-                type="number"
-                min={7}
-                max={180}
-                step={1}
-                value={Math.round(textFontSize)}
-                aria-label="텍스트 크기"
-                onChange={(event) =>
-                  onTextFontSizeChange(Number(event.target.value))
-                }
-              />
-            </label>
-            <ToolButton label="텍스트 추가" onClick={onAddText}>
-              <Type size={18} />
-            </ToolButton>
-            <ToolButton label="이미지 추가" onClick={onAddImage}>
-              <ImagePlus size={18} />
-            </ToolButton>
+          </div>
+
+          <span className="toolbar-separator desktop-utility-separator" />
+
+          <div className="tool-tab-group desktop-utility-group">
             <ToolButton label={saveLabel} onClick={onSaveLocalHandwriting}>
               <Save size={18} />
             </ToolButton>
@@ -393,6 +379,35 @@ export function EditorToolbar({
               <ZoomIn size={18} />
             </ToolButton>
           </div>
+        </div>
+      </div>
+      <div className="mobile-canvas-controls" aria-label="캔버스 보조 도구">
+        <div className="mobile-control-group">
+          <ToolButton label="되돌리기" disabled={!canUndo} onClick={onUndo}>
+            <Undo2 size={18} />
+          </ToolButton>
+          <ToolButton label="다시 실행" disabled={!canRedo} onClick={onRedo}>
+            <Redo2 size={18} />
+          </ToolButton>
+          <ToolButton label="선택 삭제" onClick={onDeleteSelection}>
+            <Trash2 size={18} />
+          </ToolButton>
+        </div>
+        <div className="mobile-control-group">
+          <ToolButton label="축소" onClick={onZoomOut}>
+            <ZoomOut size={18} />
+          </ToolButton>
+          <ToolButton label="확대" onClick={onZoomIn}>
+            <ZoomIn size={18} />
+          </ToolButton>
+        </div>
+        <div className="mobile-control-group">
+          <ToolButton label="맨 뒤로" onClick={onSendBackward}>
+            <ChevronsDown size={18} />
+          </ToolButton>
+          <ToolButton label="맨 앞으로" onClick={onBringForward}>
+            <ChevronsUp size={18} />
+          </ToolButton>
         </div>
       </div>
     </header>

@@ -43,8 +43,15 @@ const strokeSimplifyMaxPointCount = 140;
 const strokeCurveMinStep = 2.5;
 const strokeCurveMaxStep = 8;
 const strokeCurveSharpCornerDegrees = 72;
+const activeStrokeTailPointCount = 8;
 type StrokeRenderSmoothingMode = "catmullrom" | "smoothed";
 const strokeRenderSmoothingMode: StrokeRenderSmoothingMode = "catmullrom";
+
+export type ActiveStrokeRenderCache = {
+  strokeId: string | undefined;
+  frozenPointCount: number;
+  frozenRenderPoints: Point2D[];
+};
 
 export function getEditorPointerPoint(
   event: ThreeEvent<PointerEvent>,
@@ -992,6 +999,62 @@ export function getStrokeRenderPoints(
   return sampledPoints;
 }
 
+export function getStableActiveStrokeRenderPoints(input: {
+  strokeId: string;
+  points: Point2D[];
+  strokeSize: number;
+  cache: ActiveStrokeRenderCache;
+}): Point2D[] {
+  const { strokeId, points, strokeSize, cache } = input;
+  if (points.length < 3) return points;
+
+  if (
+    cache.strokeId !== strokeId ||
+    cache.frozenPointCount > points.length ||
+    cache.frozenRenderPoints.length === 0 ||
+    !isSamePoint(cache.frozenRenderPoints[0], points[0])
+  ) {
+    cache.strokeId = strokeId;
+    cache.frozenPointCount = 1;
+    cache.frozenRenderPoints = [points[0]];
+  }
+
+  const targetStep = THREE.MathUtils.clamp(
+    strokeSize * 0.75,
+    strokeCurveMinStep,
+    strokeCurveMaxStep,
+  );
+  const targetFrozenPointCount = Math.max(
+    1,
+    points.length - activeStrokeTailPointCount,
+  );
+
+  while (cache.frozenPointCount < targetFrozenPointCount) {
+    const segmentStartIndex = cache.frozenPointCount - 1;
+    const segmentPoints = getCatmullRomSegmentPoints(
+      points,
+      segmentStartIndex,
+      targetStep,
+    );
+    if (segmentPoints.length > 1) {
+      cache.frozenRenderPoints.push(...segmentPoints.slice(1));
+    }
+    cache.frozenPointCount += 1;
+  }
+
+  const tailStartIndex = Math.max(0, cache.frozenPointCount - 1);
+  const tailPoints = points.slice(tailStartIndex);
+  const tailRenderPoints =
+    tailPoints.length < 3
+      ? getLineCurvePoints(tailPoints, targetStep)
+      : getCatmullRomChunkedPoints(tailPoints, targetStep);
+
+  return [
+    ...cache.frozenRenderPoints,
+    ...tailRenderPoints.slice(cache.frozenRenderPoints.length > 0 ? 1 : 0),
+  ];
+}
+
 function getCatmullRomChunkedPoints(points: Point2D[], targetStep: number) {
   if (points.length < 3) return getLineCurvePoints(points, targetStep);
 
@@ -1040,6 +1103,45 @@ function getCatmullRomPoints(points: Point2D[], targetStep: number) {
     .map((point) => ({ x: point.x, y: point.y }));
 }
 
+function getCatmullRomSegmentPoints(
+  points: Point2D[],
+  segmentStartIndex: number,
+  targetStep: number,
+): Point2D[] {
+  const current = points[segmentStartIndex];
+  const next = points[segmentStartIndex + 1];
+  if (!current || !next) return [];
+
+  const previous = isSharpCornerAt(points, segmentStartIndex)
+    ? current
+    : (points[Math.max(segmentStartIndex - 1, 0)] ?? current);
+  const afterNext = isSharpCornerAt(points, segmentStartIndex + 1)
+    ? next
+    : (points[Math.min(segmentStartIndex + 2, points.length - 1)] ?? next);
+  const segmentLength = distance(current, next);
+  if (segmentLength < 0.001) return [current, next];
+
+  const curve = new THREE.CatmullRomCurve3(
+    [previous, current, next, afterNext].map(
+      (point) => new THREE.Vector3(point.x, point.y, 0),
+    ),
+    false,
+    "centripetal",
+    0.3,
+  );
+  const divisions = Math.max(
+    1,
+    Math.ceil(segmentLength / Math.max(targetStep, 0.5)),
+  );
+
+  const segmentPoints: Point2D[] = [current];
+  for (let step = 1; step <= divisions; step += 1) {
+    const point = curve.getPoint((1 + step / divisions) / 3);
+    segmentPoints.push({ x: point.x, y: point.y });
+  }
+  return segmentPoints;
+}
+
 function getLineCurvePoints(points: Point2D[], targetStep: number) {
   if (points.length < 2) return points;
 
@@ -1071,26 +1173,38 @@ function getSharpCornerSplitIndices(points: Point2D[], thresholdDegrees: number)
   const splitIndices = [0];
 
   for (let index = 1; index < points.length - 1; index += 1) {
-    const previous = points[index - 1];
-    const current = points[index];
-    const next = points[index + 1];
-    const aX = current.x - previous.x;
-    const aY = current.y - previous.y;
-    const bX = next.x - current.x;
-    const bY = next.y - current.y;
-    const lengthA = Math.hypot(aX, aY);
-    const lengthB = Math.hypot(bX, bY);
-    if (lengthA < 0.0001 || lengthB < 0.0001) continue;
-
-    const dot = (aX * bX + aY * bY) / (lengthA * lengthB);
-    const angle = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(dot, -1, 1)));
-    if (angle >= thresholdDegrees) {
+    if (isSharpCornerAt(points, index, thresholdDegrees)) {
       splitIndices.push(index);
     }
   }
 
   splitIndices.push(points.length - 1);
   return splitIndices;
+}
+
+function isSharpCornerAt(
+  points: Point2D[],
+  index: number,
+  thresholdDegrees = strokeCurveSharpCornerDegrees,
+) {
+  if (index <= 0 || index >= points.length - 1) return false;
+
+  const previous = points[index - 1];
+  const current = points[index];
+  const next = points[index + 1];
+  const aX = current.x - previous.x;
+  const aY = current.y - previous.y;
+  const bX = next.x - current.x;
+  const bY = next.y - current.y;
+  const lengthA = Math.hypot(aX, aY);
+  const lengthB = Math.hypot(bX, bY);
+  if (lengthA < 0.0001 || lengthB < 0.0001) return false;
+
+  const dot = (aX * bX + aY * bY) / (lengthA * lengthB);
+  const angle = THREE.MathUtils.radToDeg(
+    Math.acos(THREE.MathUtils.clamp(dot, -1, 1)),
+  );
+  return angle >= thresholdDegrees;
 }
 
 export function getSceneHits(event: ThreeEvent<PointerEvent>): SceneHit[] {
@@ -1139,6 +1253,10 @@ export function getStrokeSelectionThreshold(stroke: Stroke) {
 
 function distance(a: Point2D, b: Point2D) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function isSamePoint(a: Point2D | undefined, b: Point2D | undefined) {
+  return Boolean(a && b && a.x === b.x && a.y === b.y);
 }
 
 function distanceToSegment(point: Point2D, start: Point2D, end: Point2D) {

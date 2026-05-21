@@ -131,6 +131,86 @@ function readInitialTool(): Tool | undefined {
   return undefined;
 }
 
+function shouldPrimeMobileTextFocus(): boolean {
+  if (typeof window === "undefined") return false;
+
+  return (
+    window.matchMedia?.("(pointer: coarse)").matches ||
+    window.navigator.maxTouchPoints > 0
+  );
+}
+
+function primeMobileTextFocus(): () => void {
+  if (!shouldPrimeMobileTextFocus()) return () => {};
+
+  const bridge = document.createElement("textarea");
+  bridge.setAttribute("aria-hidden", "true");
+  bridge.setAttribute("autocomplete", "off");
+  bridge.setAttribute("autocapitalize", "off");
+  bridge.setAttribute("spellcheck", "false");
+  bridge.inputMode = "text";
+  bridge.style.position = "fixed";
+  bridge.style.top = "0";
+  bridge.style.left = "0";
+  bridge.style.width = "1px";
+  bridge.style.height = "1px";
+  bridge.style.border = "0";
+  bridge.style.padding = "0";
+  bridge.style.opacity = "0";
+  bridge.style.pointerEvents = "none";
+  bridge.style.fontSize = "16px";
+  bridge.style.zIndex = "2147483647";
+
+  document.body.append(bridge);
+  try {
+    bridge.focus({ preventScroll: true });
+    bridge.setSelectionRange(0, 0);
+  } catch {
+    bridge.focus();
+  }
+
+  return () => {
+    if (document.activeElement === bridge) {
+      bridge.blur();
+    }
+    bridge.remove();
+  };
+}
+
+function focusTextEditOverlayWhenReady(releaseFocusBridge: () => void): void {
+  if (typeof window === "undefined") {
+    releaseFocusBridge();
+    return;
+  }
+
+  let attempts = 0;
+  const focusOverlay = () => {
+    const textarea =
+      document.querySelector<HTMLTextAreaElement>(".text-edit-overlay");
+
+    if (textarea) {
+      try {
+        textarea.focus({ preventScroll: true });
+      } catch {
+        textarea.focus();
+      }
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      window.setTimeout(releaseFocusBridge, 120);
+      return;
+    }
+
+    attempts += 1;
+    if (attempts < 12) {
+      window.requestAnimationFrame(focusOverlay);
+      return;
+    }
+
+    releaseFocusBridge();
+  };
+
+  window.requestAnimationFrame(focusOverlay);
+}
+
 function clamp(value: number, range: ClampRange): number {
   return Math.min(Math.max(value, range.min), range.max);
 }
@@ -1010,8 +1090,14 @@ function EditorPage(): JSX.Element {
   }, [editor, realtimeInk.enabled, sharedObjectIds, sharedStrokeIds]);
 
   const handleAddText = useCallback(() => {
+    const releaseFocusBridge = primeMobileTextFocus();
     const object = editor.addText();
-    if (!object) return;
+    if (!object) {
+      releaseFocusBridge();
+      return;
+    }
+
+    focusTextEditOverlayWhenReady(releaseFocusBridge);
 
     localRealtimeObjectIdsRef.current.add(object.id);
     committedObjectSnapshotsRef.current.set(object.id, JSON.stringify(object));
@@ -1385,13 +1471,11 @@ function EditorPage(): JSX.Element {
         readonly={editor.readonly}
         penColor={editor.activeColor}
         textFontFamily={editor.activeTextFontFamily}
-        textFontSize={editor.activeTextFontSize}
         penSize={editor.penSize}
         imageInputRef={editor.imageInputRef as RefObject<HTMLInputElement>}
         onToolChange={handleToolChange}
         onPenColorChange={editor.applyColor}
         onTextFontFamilyChange={editor.applyTextFontFamily}
-        onTextFontSizeChange={editor.applyTextFontSize}
         onPenSizeChange={editor.setPenSize}
         onAddText={handleAddText}
         onAddImage={editor.addImage}

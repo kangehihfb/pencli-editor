@@ -1,0 +1,99 @@
+config:
+  target: "http://localhost:3001"
+  # Primary server-side Socket.IO load test.
+  # Browser/user experience checks stay in Playwright; this scenario is for backend fanout pressure.
+  engines:
+    socketio: {}
+
+  # 부하 단계: warmup → ramp → peak → cooldown
+  phases:
+    - name: warmup
+      duration: 30
+      arrivalRate: 2 # 30초 동안 초당 2명 = 60명 입장
+    - name: ramp
+      duration: 60
+      arrivalRate: 2
+      rampTo: 5 # 60초 동안 초당 2→5명으로 증가
+    - name: peak
+      duration: 120
+      arrivalRate: 5 # 120초 동안 초당 5명 유지 = 누적 ~200명
+    - name: cooldown
+      duration: 30
+      arrivalRate: 1
+
+  # 전역 변수
+  variables:
+    roomId: "load-test-artillery"
+    pageId: "page-1"
+
+  # Socket.IO 연결 설정
+  socketio:
+    path: "/handwriting/socket.io/"
+    transports:
+      - websocket
+    query:
+      # 실제 JWT 토큰은 환경변수로 주입: INK_TOKEN=xxx npm run load:realtime-socket
+      token: "{{ $env.INK_TOKEN }}"
+
+  # 성능 임계값 — 이 기준 초과 시 테스트 실패
+  ensure:
+    thresholds:
+      - http.response_time.p99: 3000 # HTTP 응답 p99 < 3s
+    conditions:
+      - expression: "counters['errors.ETIMEDOUT'] == 0"
+        strict: false
+
+scenarios:
+  - name: "realtime-ink-server-fanout"
+    engine: socketio
+    flow:
+      # 방 입장
+      - emit:
+          channel: "join-room"
+          data: "{{ roomId }}"
+      - think: 1
+
+      # 필기 루프 — 30회 반복 (약 60초)
+      - loop:
+          - emit:
+              channel: "server-broadcast"
+              data:
+                - "{{ roomId }}"
+                - >
+                  {
+                    "protocol": "realtime-ink",
+                    "version": 1,
+                    "type": "ink:stroke:start",
+                    "roomId": "{{ roomId }}",
+                    "pageId": "{{ pageId }}",
+                    "actorId": "artillery-user-{{ $uuid }}",
+                    "actorRole": "student",
+                    "strokeId": "stroke-{{ $uuid }}",
+                    "color": "#e74c3c",
+                    "size": 3,
+                    "layer": 0,
+                    "point": { "x": {{ $randomNumber(100, 900) }}, "y": {{ $randomNumber(100, 500) }} }
+                  }
+          - think: 1
+          - emit:
+              channel: "server-broadcast"
+              data:
+                - "{{ roomId }}"
+                - >
+                  {
+                    "protocol": "realtime-ink",
+                    "version": 1,
+                    "type": "ink:stroke:end",
+                    "roomId": "{{ roomId }}",
+                    "pageId": "{{ pageId }}",
+                    "actorId": "artillery-user-{{ $uuid }}",
+                    "actorRole": "student",
+                    "strokeId": "stroke-{{ $uuid }}",
+                    "points": [
+                      { "x": {{ $randomNumber(100, 900) }}, "y": {{ $randomNumber(100, 500) }} },
+                      { "x": {{ $randomNumber(100, 900) }}, "y": {{ $randomNumber(100, 500) }} }
+                    ]
+                  }
+          - think: 1
+
+        count: 30

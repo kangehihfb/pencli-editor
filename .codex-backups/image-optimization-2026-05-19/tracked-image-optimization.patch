@@ -1,0 +1,1254 @@
+diff --git a/src/components/editor/scene/WebGLObjectMesh.tsx b/src/components/editor/scene/WebGLObjectMesh.tsx
+index 197290d..c1c3fa2 100644
+--- a/src/components/editor/scene/WebGLObjectMesh.tsx
++++ b/src/components/editor/scene/WebGLObjectMesh.tsx
+@@ -1,16 +1,17 @@
+ import { Text } from "@react-three/drei";
+ import type { ThreeEvent } from "@react-three/fiber";
+ import { useThree } from "@react-three/fiber";
+-import { useMemo } from "react";
++import { useEffect, useMemo, useState } from "react";
+ import * as THREE from "three";
+ import {
+   EDITOR_TEXT_TROIKA_PRELOAD_CHARACTERS,
+   getEditorTextTroikaFontUrl,
+ } from "../../../lib/editorTextFonts";
+ import {
+-  createImageObjectTexture,
++  createImageObjectTextureFromImage,
+   measureTextObject,
+ } from "../../../lib/objectTexture";
++import { getImageRenderSource } from "../../../lib/imageAssets";
+ import { layerToZ } from "../../../lib/sceneMath";
+ import type { WebGLObject } from "../../../types/editor";
+ import {
+@@ -21,6 +22,11 @@ import {
+ 
+ const troikaTextSdfGlyphSize = 512;
+ 
++type LoadedImage = {
++  source: string;
++  image: HTMLImageElement;
++};
++
+ type WebGLObjectMeshProperties = {
+   object: WebGLObject;
+   renderVisual: boolean;
+@@ -84,6 +90,9 @@ export function WebGLObjectMesh({
+ 
+   const textValue =
+     object.kind === "text" ? (draftText ?? object.text ?? "") : "";
++  const imageSource =
++    object.kind === "image" ? getImageRenderSource(object) : undefined;
++  const [loadedImage, setLoadedImage] = useState<LoadedImage | undefined>();
+   const visualSize = useMemo(() => {
+     if (object.kind !== "text" || draftText === undefined) {
+       return {
+@@ -103,21 +112,60 @@ export function WebGLObjectMesh({
+     textValue,
+   ]);
+ 
++  useEffect(() => {
++    if (object.kind !== "image" || !imageSource) {
++      setLoadedImage(undefined);
++      return undefined;
++    }
++
++    let canceled = false;
++    const image = new Image();
++    image.decoding = "async";
++    if (/^https?:/i.test(imageSource)) {
++      image.crossOrigin = "anonymous";
++    }
++
++    const handleLoad = (): void => {
++      if (canceled) return;
++      setLoadedImage({ source: imageSource, image });
++    };
++    const handleError = (): void => {
++      if (canceled) return;
++      setLoadedImage((previous) =>
++        previous?.source === imageSource ? undefined : previous,
++      );
++    };
++
++    image.addEventListener("load", handleLoad);
++    image.addEventListener("error", handleError);
++    image.src = imageSource;
++
++    return () => {
++      canceled = true;
++      image.removeEventListener("load", handleLoad);
++      image.removeEventListener("error", handleError);
++    };
++  }, [imageSource, object.kind]);
++
+   const texture = useMemo(() => {
+-    if (object.kind === "text") return undefined;
++    if (object.kind !== "image" || !loadedImage) return undefined;
+     if (object.kind === "image") {
+-      return createImageObjectTexture({
+-        imageSrc: object.imageSrc,
++      return createImageObjectTextureFromImage({
++        image: loadedImage.image,
+         backgroundColor: object.imageBackground,
+       });
+     }
+     return undefined;
+-  }, [object.imageBackground, object.imageSrc, object.kind]);
++  }, [loadedImage, object.imageBackground, object.kind]);
++  useEffect(() => () => texture?.dispose(), [texture]);
++
+   const shouldRenderVisual =
+     renderVisual && (!editing || object.kind === "text");
+   const shouldRenderImageTexture =
+-    shouldRenderVisual && object.kind === "image";
++    shouldRenderVisual && object.kind === "image" && Boolean(texture);
+   const shouldRenderTroikaText = shouldRenderVisual && object.kind === "text";
++  const canSelectSurface =
++    !isExamImage && (object.kind !== "image" || shouldRenderImageTexture);
+   const textFontUrl =
+     object.kind === "text"
+       ? getEditorTextTroikaFontUrl(object.fontFamily)
+@@ -132,7 +180,7 @@ export function WebGLObjectMesh({
+       <mesh
+         name={`${objectSceneName}:surface`}
+         renderOrder={object.layer * 10}
+-        onPointerDown={isExamImage ? undefined : onSelect}
++        onPointerDown={canSelectSurface ? onSelect : undefined}
+         onDoubleClick={
+           isExamImage || object.kind !== "text"
+             ? undefined
+@@ -155,6 +203,7 @@ export function WebGLObjectMesh({
+           colorWrite={shouldRenderImageTexture}
+           opacity={shouldRenderImageTexture ? 1 : 0}
+           transparent
++          depthWrite={shouldRenderImageTexture}
+           alphaTest={0}
+           side={THREE.DoubleSide}
+           toneMapped={false}
+diff --git a/src/hooks/useEditorState.ts b/src/hooks/useEditorState.ts
+index 1017cc9..235c7db 100644
+--- a/src/hooks/useEditorState.ts
++++ b/src/hooks/useEditorState.ts
+@@ -105,6 +105,9 @@ type RotateGroupOriginalStroke = GroupRotateOrigin["strokes"][number];
+ type ImageObjectInsertInput = {
+   fileName: string;
+   imageSource: string;
++  fileId: string;
++  fileType: string;
++  fileSize: number;
+   aspect: number;
+   maxLayer: number;
+   drawingBounds?: PointBounds;
+@@ -372,7 +375,16 @@ function getResizedGroupObjectNextCenter(
+ }
+ 
+ function createInsertedImageObject(input: ImageObjectInsertInput): WebGLObject {
+-  const { fileName, imageSource, maxLayer, drawingBounds, aspect } = input;
++  const {
++    fileName,
++    imageSource,
++    fileId,
++    fileType,
++    fileSize,
++    maxLayer,
++    drawingBounds,
++    aspect,
++  } = input;
+   const safeAspect = getSafeImageAspect(aspect);
+   const width = 180;
+   return {
+@@ -385,6 +397,10 @@ function createInsertedImageObject(input: ImageObjectInsertInput): WebGLObject {
+     layer: maxLayer + 1,
+     imageSrc: imageSource,
+     imageName: fileName,
++    imageFileId: fileId,
++    imageMimeType: fileType,
++    imageSizeBytes: fileSize,
++    imageStatus: "local",
+   };
+ }
+ 
+@@ -583,7 +599,9 @@ function useEditorState(
+   const undoHistoryReference = useRef<HistorySnapshot[]>([]);
+   const redoHistoryReference = useRef<HistorySnapshot[]>([]);
+   const activeStrokeIdReference = useRef<string | undefined>();
+-  const [tool, setTool] = useState<Tool>(() => options?.initialTool ?? "answer");
++  const [tool, setTool] = useState<Tool>(
++    () => options?.initialTool ?? "answer",
++  );
+   const [penColor, setPenColor] = useState("#183f3a");
+   const [penSize, setPenSize] = useState(3.5);
+   const [textFontFamily, setTextFontFamily] = useState(
+@@ -765,7 +783,7 @@ function useEditorState(
+ 
+   const addImageFromFile = (
+     event: ChangeEvent<HTMLInputElement>,
+-    onObjectCreated?: (object: WebGLObject) => void,
++    onObjectCreated?: (object: WebGLObject, file: File) => void,
+   ): void => {
+     if (readonly) return;
+     const inputElement = event.currentTarget;
+@@ -773,11 +791,16 @@ function useEditorState(
+     inputElement.value = "";
+     if (!file) return;
+ 
++    const objectUrl = URL.createObjectURL(file);
++
+     const addDecodedImage = (imageSource: string, aspect: number): void => {
+       recordHistory();
+       const object = createInsertedImageObject({
+         fileName: file.name,
+         imageSource,
++        fileId: makeId("file"),
++        fileType: file.type || "application/octet-stream",
++        fileSize: file.size,
+         aspect,
+         maxLayer,
+         drawingBounds,
+@@ -788,24 +811,15 @@ function useEditorState(
+       setGroupSelection([{ type: "object", id: object.id }]);
+       setEditingText(undefined);
+       setTool("select");
+-      onObjectCreated?.(object);
++      onObjectCreated?.(object, file);
+     };
+ 
+-    const reader = new FileReader();
+-    reader.addEventListener("load", () => {
+-      if (typeof reader.result !== "string") return;
+-
+-      const image = new Image();
+-      image.decoding = "async";
+-      image.addEventListener("load", () => {
+-        addDecodedImage(
+-          reader.result as string,
+-          image.naturalWidth / image.naturalHeight,
+-        );
+-      });
+-      image.src = reader.result;
++    const image = new Image();
++    image.decoding = "async";
++    image.addEventListener("load", () => {
++      addDecodedImage(objectUrl, image.naturalWidth / image.naturalHeight);
+     });
+-    reader.readAsDataURL(file);
++    image.src = objectUrl;
+   };
+ 
+   const clearAll = (): void => {
+@@ -1128,6 +1142,15 @@ function useEditorState(
+         | "fontSize"
+         | "fontFamily"
+         | "color"
++        | "imageSrc"
++        | "imageFileId"
++        | "imageUrl"
++        | "imageThumbnailUrl"
++        | "imageStorageKey"
++        | "imageMimeType"
++        | "imageSizeBytes"
++        | "imageSha256"
++        | "imageStatus"
+       >
+     >,
+   ): void => {
+diff --git a/src/hooks/useRealtimeInk.ts b/src/hooks/useRealtimeInk.ts
+index a215b33..226f77b 100644
+--- a/src/hooks/useRealtimeInk.ts
++++ b/src/hooks/useRealtimeInk.ts
+@@ -10,6 +10,11 @@ import {
+   startFrontendSpanFromCarrier,
+   type TraceCarrier,
+ } from "../lib/observability";
++import {
++  getImageAssetReference,
++  hydrateImageObject,
++  toRealtimeImageObject,
++} from "../lib/imageAssets";
+ import { getNextStrokePointBatch } from "../lib/sceneMath";
+ import {
+   batchIntervalMs,
+@@ -22,6 +27,7 @@ import {
+   readRealtimeInkConfiguration,
+   socketPath,
+   syncRequestDelayMs,
++  type CollaborativeAsset,
+   type RealtimeInkMessage,
+   type RealtimeInkStatus,
+   type StrokeStyle,
+@@ -155,7 +161,13 @@ export function useRealtimeInk() {
+       // volatile broadcast는 획 이동 중 고빈도로 발생하므로 span 생략
+       if (eventName === "server-volatile-broadcast") {
+         if (!socket?.connected) return;
+-        socket.emit(eventName, configuration.roomId, payload, new Uint8Array(), {});
++        socket.emit(
++          eventName,
++          configuration.roomId,
++          payload,
++          new Uint8Array(),
++          {},
++        );
+         return;
+       }
+ 
+@@ -238,7 +250,7 @@ export function useRealtimeInk() {
+     applyRemoteUpdate,
+     commitStroke,
+     deleteStrokes,
+-    commitObjects,
++    commitObjects: commitYjsObjects,
+     deleteObjects,
+     encodeCurrentState,
+     markSyncRequested,
+@@ -251,6 +263,43 @@ export function useRealtimeInk() {
+     onRemoteObjectsChange: handleRemoteObjectsChange,
+   });
+ 
++  const commitObjects = useCallback(
++    (objects: WebGLObject[]) => {
++      if (!configuration.enabled) {
++        commitYjsObjects(objects);
++        return;
++      }
++
++      for (const object of objects) {
++        const asset = getImageAssetReference(object);
++        if (!asset) continue;
++
++        emitMessage("server-broadcast", {
++          protocol: protocolName,
++          version: 1,
++          type: "image:ready",
++          roomId: configuration.roomId,
++          pageId: configuration.pageId,
++          actorId: configuration.actorId,
++          actorRole: configuration.actorRole,
++          object: toRealtimeImageObject(object),
++          asset,
++        });
++      }
++
++      commitYjsObjects(objects);
++    },
++    [
++      commitYjsObjects,
++      configuration.actorId,
++      configuration.actorRole,
++      configuration.enabled,
++      configuration.pageId,
++      configuration.roomId,
++      emitMessage,
++    ],
++  );
++
+   const flushPendingPoints = useCallback(() => {
+     if (flushTimerReference.current !== undefined) {
+       window.clearTimeout(flushTimerReference.current);
+@@ -511,7 +560,10 @@ export function useRealtimeInk() {
+ 
+           // 4-3: cold start 측정 — 첫 유효 메시지 수신 시 종료
+           const coldStartSpan = coldStartSpanReference.current;
+-          if (coldStartSpan && coldStartBeginTimeReference.current !== undefined) {
++          if (
++            coldStartSpan &&
++            coldStartBeginTimeReference.current !== undefined
++          ) {
+             const coldStartDurationMs = Math.round(
+               performance.now() - coldStartBeginTimeReference.current,
+             );
+@@ -587,6 +639,22 @@ export function useRealtimeInk() {
+             return;
+           }
+ 
++          if (message.type === "image:ready") {
++            const asset: CollaborativeAsset = {
++              ...message.asset,
++              pageId: message.pageId,
++              actorId: message.actorId,
++              actorRole: message.actorRole,
++              updatedAt: Date.now(),
++            };
++            const object = hydrateImageObject(message.object, asset);
++            setRemoteObjects((previous) => [
++              ...previous.filter((item) => item.id !== object.id),
++              object,
++            ]);
++            return;
++          }
++
+           if (message.type === "ink:stroke:start") {
+             setRemoteStrokes((previous) => [
+               ...previous.filter((stroke) => stroke.id !== message.strokeId),
+@@ -790,16 +858,20 @@ export function useRealtimeInk() {
+     // stroke lifecycle span 완료 기록
+     const strokeSpan = activeStrokeSpanReference.current;
+     if (strokeSpan) {
+-      const durationMs = strokeBeginTimeReference.current !== undefined
+-        ? Math.round(performance.now() - strokeBeginTimeReference.current)
+-        : undefined;
++      const durationMs =
++        strokeBeginTimeReference.current !== undefined
++          ? Math.round(performance.now() - strokeBeginTimeReference.current)
++          : undefined;
+       strokeSpan.addEvent("stroke.end", {
+         "stroke.id": activeStroke.id,
+         "stroke.points.count": activeStroke.points.length,
+         ...(durationMs !== undefined && { "stroke.duration_ms": durationMs }),
+       });
+       strokeSpan.setAttribute("stroke.completed", true);
+-      strokeSpan.setAttribute("stroke.points.count", activeStroke.points.length);
++      strokeSpan.setAttribute(
++        "stroke.points.count",
++        activeStroke.points.length,
++      );
+       strokeSpan.end();
+       activeStrokeSpanReference.current = undefined;
+       strokeBeginTimeReference.current = undefined;
+diff --git a/src/hooks/useRealtimeInkDocument.ts b/src/hooks/useRealtimeInkDocument.ts
+index fbd00b3..dae5e6b 100644
+--- a/src/hooks/useRealtimeInkDocument.ts
++++ b/src/hooks/useRealtimeInkDocument.ts
+@@ -1,10 +1,16 @@
+ import { useCallback, useEffect, useRef, useState } from "react";
+ import * as Y from "yjs";
+ import type { Point2D, Stroke, WebGLObject } from "../types/editor";
++import {
++  getImageAssetReference,
++  hydrateImageObject,
++  toRealtimeImageObject,
++} from "../lib/imageAssets";
+ import {
+   initialYjsDebug,
+   localYjsOrigin,
+   remoteYjsOrigin,
++  type CollaborativeAsset,
+   type CollaborativeObject,
+   type CollaborativeStroke,
+   type RealtimeInkConfiguration,
+@@ -39,6 +45,7 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
+   const ydocReference = useRef<Y.Doc | undefined>();
+   const yStrokesReference = useRef<Y.Map<CollaborativeStroke> | undefined>();
+   const yObjectsReference = useRef<Y.Map<CollaborativeObject> | undefined>();
++  const yAssetsReference = useRef<Y.Map<CollaborativeAsset> | undefined>();
+   const [yjsStrokes, setYjsStrokes] = useState<CollaborativeStroke[]>([]);
+   const [yjsObjects, setYjsObjects] = useState<CollaborativeObject[]>([]);
+   const [yjsDebug, setYjsDebug] =
+@@ -62,19 +69,27 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
+       remoteStrokeCount: remoteFinalStrokes.length,
+     }));
+     onRemoteFinalStrokesChange(remoteFinalStrokes);
+-  }, [
+-    configuration.actorId,
+-    configuration.pageId,
+-    onRemoteFinalStrokesChange,
+-  ]);
++  }, [configuration.actorId, configuration.pageId, onRemoteFinalStrokesChange]);
+ 
+   const refreshYjsObjects = useCallback(() => {
+     const yObjects = yObjectsReference.current;
++    const yAssets = yAssetsReference.current;
+     if (!yObjects) return;
+ 
+-    const nextObjects = Array.from(yObjects.values()).filter(
+-      (object) => object.pageId === configuration.pageId,
++    const assetsByFileId = new Map(
++      Array.from(yAssets?.values() ?? [])
++        .filter((asset) => asset.pageId === configuration.pageId)
++        .map((asset) => [asset.fileId, asset]),
+     );
++    const nextObjects = Array.from(yObjects.values())
++      .filter((object) => object.pageId === configuration.pageId)
++      .map((object) => {
++        if (object.kind !== "image" || !object.imageFileId) return object;
++        return hydrateImageObject(
++          object,
++          assetsByFileId.get(object.imageFileId),
++        ) as CollaborativeObject;
++      });
+     const remoteObjects = nextObjects.filter(
+       (object) => object.actorId !== configuration.actorId,
+     );
+@@ -84,6 +99,7 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
+       ...previous,
+       objectCount: nextObjects.length,
+       remoteObjectCount: remoteObjects.length,
++      assetCount: assetsByFileId.size,
+     }));
+     onRemoteObjectsChange(remoteObjects);
+   }, [configuration.actorId, configuration.pageId, onRemoteObjectsChange]);
+@@ -94,9 +110,11 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
+     const ydoc = new Y.Doc();
+     const yStrokes = ydoc.getMap<CollaborativeStroke>("strokes");
+     const yObjects = ydoc.getMap<CollaborativeObject>("objects");
++    const yAssets = ydoc.getMap<CollaborativeAsset>("assets");
+     ydocReference.current = ydoc;
+     yStrokesReference.current = yStrokes;
+     yObjectsReference.current = yObjects;
++    yAssetsReference.current = yAssets;
+ 
+     const handleYjsUpdate = (update: Uint8Array, origin: unknown): void => {
+       if (origin === remoteYjsOrigin) return;
+@@ -113,17 +131,20 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
+     ydoc.on("update", handleYjsUpdate);
+     yStrokes.observe(refreshYjsStrokes);
+     yObjects.observe(refreshYjsObjects);
++    yAssets.observe(refreshYjsObjects);
+     refreshYjsStrokes();
+     refreshYjsObjects();
+ 
+     return () => {
+       yStrokes.unobserve(refreshYjsStrokes);
+       yObjects.unobserve(refreshYjsObjects);
++      yAssets.unobserve(refreshYjsObjects);
+       ydoc.off("update", handleYjsUpdate);
+       ydoc.destroy();
+       ydocReference.current = undefined;
+       yStrokesReference.current = undefined;
+       yObjectsReference.current = undefined;
++      yAssetsReference.current = undefined;
+       setYjsStrokes([]);
+       setYjsObjects([]);
+       setYjsDebug(initialYjsDebug);
+@@ -203,12 +224,28 @@ export function useRealtimeInkDocument(input: UseRealtimeInkDocumentInput) {
+     (objects: WebGLObject[]) => {
+       const ydoc = ydocReference.current;
+       const yObjects = yObjectsReference.current;
++      const yAssets = yAssetsReference.current;
+       if (!ydoc || !yObjects) return;
+ 
+       ydoc.transact(() => {
+         for (const object of objects) {
++          const realtimeObject = toRealtimeImageObject(object);
++          const imageAsset = getImageAssetReference(object);
++
++          if (imageAsset && yAssets) {
++            yAssets.set(imageAsset.fileId, {
++              ...imageAsset,
++              width: object.width,
++              height: object.height,
++              pageId: configuration.pageId,
++              actorId: configuration.actorId,
++              actorRole: configuration.actorRole,
++              updatedAt: Date.now(),
++            });
++          }
++
+           yObjects.set(object.id, {
+-            ...object,
++            ...realtimeObject,
+             pageId: configuration.pageId,
+             actorId: configuration.actorId,
+             actorRole: configuration.actorRole,
+diff --git a/src/lib/exportPageImage.ts b/src/lib/exportPageImage.ts
+index a4e0ef8..e077d9a 100644
+--- a/src/lib/exportPageImage.ts
++++ b/src/lib/exportPageImage.ts
+@@ -1,4 +1,5 @@
+ import type { Stroke, WebGLObject } from "../types/editor";
++import { getImageRenderSource } from "./imageAssets";
+ 
+ export type PageExportState = {
+   strokes: Stroke[];
+@@ -130,7 +131,7 @@ export async function createSerializablePageExportState(
+     objects: await Promise.all(
+       state.objects.map(async (object) => ({
+         ...object,
+-        imageSrc: await resolveExportImageSource(object.imageSrc),
++        imageSrc: await resolveExportImageSource(getImageRenderSource(object)),
+       })),
+     ),
+   };
+diff --git a/src/lib/handwritingSnapshot.ts b/src/lib/handwritingSnapshot.ts
+index a84482e..514ff35 100644
+--- a/src/lib/handwritingSnapshot.ts
++++ b/src/lib/handwritingSnapshot.ts
+@@ -1,4 +1,5 @@
+ import type { Point2D, Stroke, WebGLObject } from "../types/editor";
++import { getImageFileId, getSharedImageUrl } from "./imageAssets";
+ 
+ type HandwritingSenderType = "STUDENT" | "MANAGER" | "SYSTEM";
+ 
+@@ -17,6 +18,9 @@ type MildangElementCustomData = {
+   senderId?: string;
+   senderName: string;
+   senderType: HandwritingSenderType;
++  imageUrl?: string;
++  imageStorageKey?: string;
++  imageThumbnailUrl?: string;
+ };
+ 
+ type MildangElementBase = {
+@@ -69,13 +73,32 @@ export type MildangTextElement = MildangElementBase & {
+   lineHeight: number;
+ };
+ 
++export type MildangImageElement = MildangElementBase & {
++  type: "image";
++  fileId: string | null;
++  status: "pending" | "saved" | "error";
++  scale: [number, number];
++};
++
+ export type MildangHandwritingElement =
+   | MildangFreedrawElement
+-  | MildangTextElement;
++  | MildangTextElement
++  | MildangImageElement;
++
++export type MildangExternalFileData = {
++  id: string;
++  url: string;
++  mimeType?: string;
++  storageKey?: string;
++  thumbnailUrl?: string;
++  created: number;
++  sizeBytes?: number;
++  sha256?: string;
++};
+ 
+ export type MildangHandwritingData = {
+   elements: MildangHandwritingElement[];
+-  files: Record<string, never>;
++  files: Record<string, MildangExternalFileData>;
+   appState: Record<string, unknown>;
+ };
+ 
+@@ -298,6 +321,43 @@ export function toMildangTextElement(
+   };
+ }
+ 
++export function toMildangImageElement(
++  object: WebGLObject,
++  context: SnapshotContext,
++  updated = Date.now(),
++): MildangImageElement | undefined {
++  if (object.kind !== "image") return undefined;
++
++  const imageUrl = getSharedImageUrl(object);
++  const fileId = getImageFileId(object);
++  if (!imageUrl || !fileId) return undefined;
++
++  return {
++    ...getElementBase({
++      id: object.id,
++      x: object.x - object.width / 2,
++      y: object.y - object.height / 2,
++      width: object.width,
++      height: object.height,
++      angle: degToRad(object.rotation ?? 0),
++      strokeColor: "transparent",
++      strokeWidth: 1,
++      context,
++      updated,
++    }),
++    type: "image",
++    fileId,
++    status: "saved",
++    scale: [1, 1],
++    customData: {
++      ...getCustomData(context),
++      imageUrl,
++      imageStorageKey: object.imageStorageKey,
++      imageThumbnailUrl: object.imageThumbnailUrl,
++    },
++  };
++}
++
+ function createMildangAppState(): Record<string, unknown> {
+   return {
+     viewBackgroundColor: "transparent",
+@@ -316,10 +376,34 @@ export function createPentestHandwritingSnapshot(input: {
+   const textElements = cloneObjects(input.objects)
+     .map((object) => toMildangTextElement(object, input.context, updated))
+     .filter((element): element is MildangTextElement => Boolean(element));
++  const imageElements = cloneObjects(input.objects)
++    .map((object) => toMildangImageElement(object, input.context, updated))
++    .filter((element): element is MildangImageElement => Boolean(element));
++  const files = cloneObjects(input.objects).reduce<
++    Record<string, MildangExternalFileData>
++  >((nextFiles, object) => {
++    if (object.kind !== "image") return nextFiles;
++
++    const imageUrl = getSharedImageUrl(object);
++    const fileId = getImageFileId(object);
++    if (!imageUrl || !fileId) return nextFiles;
++
++    nextFiles[fileId] = {
++      id: fileId,
++      url: imageUrl,
++      mimeType: object.imageMimeType,
++      storageKey: object.imageStorageKey,
++      thumbnailUrl: object.imageThumbnailUrl,
++      created: updated,
++      sizeBytes: object.imageSizeBytes,
++      sha256: object.imageSha256,
++    };
++    return nextFiles;
++  }, {});
+ 
+   return {
+-    elements: [...strokeElements, ...textElements],
+-    files: {},
++    elements: [...strokeElements, ...textElements, ...imageElements],
++    files,
+     appState: createMildangAppState(),
+   };
+ }
+@@ -501,6 +585,36 @@ function fromMildangTextElement(
+   };
+ }
+ 
++function fromMildangImageElement(
++  element: MildangImageElement,
++  files: Record<string, MildangExternalFileData>,
++  layer: number,
++): WebGLObject {
++  const file = element.fileId ? files[element.fileId] : undefined;
++  const imageUrl = file?.url ?? element.customData.imageUrl;
++  const thumbnailUrl =
++    file?.thumbnailUrl ?? element.customData.imageThumbnailUrl;
++  return {
++    id: element.id,
++    kind: "image",
++    x: element.x + element.width / 2,
++    y: element.y + element.height / 2,
++    width: element.width,
++    height: element.height,
++    rotation: radToDeg(element.angle),
++    layer,
++    imageSrc: imageUrl ?? thumbnailUrl,
++    imageFileId: element.fileId ?? file?.id,
++    imageUrl,
++    imageThumbnailUrl: thumbnailUrl,
++    imageStorageKey: file?.storageKey ?? element.customData.imageStorageKey,
++    imageMimeType: file?.mimeType,
++    imageSizeBytes: file?.sizeBytes,
++    imageSha256: file?.sha256,
++    imageStatus: imageUrl || thumbnailUrl ? "uploaded" : "error",
++  };
++}
++
+ export function parsePentestHandwritingSnapshot(
+   parsed: unknown,
+ ): PentestLoadedHandwritingState | undefined {
+@@ -524,11 +638,22 @@ export function parsePentestHandwritingSnapshot(
+     .map((element, index) =>
+       fromMildangTextElement(element, strokes.length + index + 1),
+     );
++  const imageObjects = elements
++    .filter((element): element is MildangImageElement =>
++      Boolean(element && element.type === "image"),
++    )
++    .map((element, index) =>
++      fromMildangImageElement(
++        element,
++        handwritingData.files,
++        strokes.length + objects.length + index + 1,
++      ),
++    );
+ 
+   return {
+     handwritingData,
+     strokes,
+-    objects,
++    objects: [...objects, ...imageObjects],
+   };
+ }
+ 
+diff --git a/src/lib/objectTexture.ts b/src/lib/objectTexture.ts
+index 1b32c64..bfc4fd4 100644
+--- a/src/lib/objectTexture.ts
++++ b/src/lib/objectTexture.ts
+@@ -81,6 +81,11 @@ type ImageTextureOptions = {
+   backgroundColor?: string;
+ };
+ 
++type LoadedImageTextureOptions = {
++  image: HTMLImageElement;
++  backgroundColor?: string;
++};
++
+ function createPlaceholderTexture(backgroundColor = "#ffffff") {
+   const canvas = document.createElement("canvas");
+   canvas.width = 16;
+@@ -94,6 +99,30 @@ function createPlaceholderTexture(backgroundColor = "#ffffff") {
+   return configureTexture(new THREE.CanvasTexture(canvas));
+ }
+ 
++export function createImageObjectTextureFromImage({
++  image,
++  backgroundColor,
++}: LoadedImageTextureOptions) {
++  if (!backgroundColor) {
++    const texture = configureTexture(new THREE.Texture(image));
++    texture.needsUpdate = true;
++    return texture;
++  }
++
++  const canvas = document.createElement("canvas");
++  canvas.width = image.naturalWidth || image.width;
++  canvas.height = image.naturalHeight || image.height;
++  const imageContext = canvas.getContext("2d");
++
++  if (imageContext) {
++    imageContext.fillStyle = backgroundColor;
++    imageContext.fillRect(0, 0, canvas.width, canvas.height);
++    imageContext.drawImage(image, 0, 0, canvas.width, canvas.height);
++  }
++
++  return configureTexture(new THREE.CanvasTexture(canvas));
++}
++
+ export function createImageObjectTexture({
+   imageSrc,
+   backgroundColor,
+diff --git a/src/lib/realtimeInkProtocol.ts b/src/lib/realtimeInkProtocol.ts
+index 141d1dd..bbbf3d3 100644
+--- a/src/lib/realtimeInkProtocol.ts
++++ b/src/lib/realtimeInkProtocol.ts
+@@ -40,11 +40,28 @@ export type CollaborativeObject = WebGLObject & {
+   updatedAt: number;
+ };
+ 
++export type CollaborativeAsset = {
++  fileId: string;
++  url: string;
++  thumbnailUrl?: string;
++  storageKey?: string;
++  mimeType?: string;
++  width?: number;
++  height?: number;
++  sizeBytes?: number;
++  sha256?: string;
++  pageId: string;
++  actorId: string;
++  actorRole: RealtimeInkRole;
++  updatedAt: number;
++};
++
+ export type RealtimeInkYjsDebug = {
+   strokeCount: number;
+   remoteStrokeCount: number;
+   objectCount: number;
+   remoteObjectCount: number;
++  assetCount: number;
+   localUpdateCount: number;
+   remoteUpdateCount: number;
+   sentUpdateCount: number;
+@@ -107,6 +124,20 @@ export type RealtimeInkMessage =
+       actorId: string;
+       update: number[];
+     }
++  | {
++      protocol: typeof protocolName;
++      version: 1;
++      type: "image:ready";
++      roomId: string;
++      pageId: string;
++      actorId: string;
++      actorRole: RealtimeInkRole;
++      object: WebGLObject;
++      asset: Omit<
++        CollaborativeAsset,
++        "pageId" | "actorId" | "actorRole" | "updatedAt"
++      >;
++    }
+   | {
+       protocol: typeof protocolName;
+       version: 1;
+@@ -148,6 +179,7 @@ export const initialYjsDebug: RealtimeInkYjsDebug = {
+   remoteStrokeCount: 0,
+   objectCount: 0,
+   remoteObjectCount: 0,
++  assetCount: 0,
+   localUpdateCount: 0,
+   remoteUpdateCount: 0,
+   sentUpdateCount: 0,
+diff --git a/src/lib/storageTraceClient.ts b/src/lib/storageTraceClient.ts
+index ae2051c..3030ec7 100644
+--- a/src/lib/storageTraceClient.ts
++++ b/src/lib/storageTraceClient.ts
+@@ -14,6 +14,19 @@ export type StorageTraceResponse = {
+   data?: unknown;
+ };
+ 
++export type StorageAssetUploadResponse = StorageTraceResponse & {
++  bucket?: string;
++  assetId?: string;
++  objectUrl?: string;
++  assetUrl?: string;
++  presignedGetUrl?: string;
++  presignedExpiresIn?: number;
++  contentType?: string;
++  sizeBytes?: number;
++  sha256?: string;
++  etag?: string;
++};
++
+ type StorageFetchInput = {
+   serverUrl: string;
+   operation: string;
+@@ -47,6 +60,18 @@ function getResponseTargetKey(data: unknown): string | undefined {
+   return typeof targetKey === "string" ? targetKey : undefined;
+ }
+ 
++function getResponseString(data: unknown, key: string): string | undefined {
++  if (!data || typeof data !== "object") return undefined;
++  const value = (data as Record<string, unknown>)[key];
++  return typeof value === "string" ? value : undefined;
++}
++
++function getResponseNumber(data: unknown, key: string): number | undefined {
++  if (!data || typeof data !== "object") return undefined;
++  const value = (data as Record<string, unknown>)[key];
++  return typeof value === "number" ? value : undefined;
++}
++
+ async function fetchStorageTrace(
+   input: StorageFetchInput,
+ ): Promise<StorageTraceResponse> {
+@@ -113,6 +138,44 @@ export function makeStorageDemoKey(prefix: string): string {
+   return `json/frontend-${prefix}-${Date.now().toString(36)}.json`;
+ }
+ 
++function sanitizeStorageKeyPart(value: string): string {
++  return (
++    value
++      .trim()
++      .replace(/[^a-zA-Z0-9가-힣._:-]+/g, "-")
++      .replace(/^-|-$/g, "") || "unknown"
++  );
++}
++
++function getFileExtension(fileName: string, contentType: string): string {
++  const fileExtension = fileName.split(".").pop();
++  if (fileExtension && fileExtension !== fileName) {
++    return sanitizeStorageKeyPart(fileExtension.toLowerCase());
++  }
++
++  const mimeExtension = contentType.split("/").pop();
++  return sanitizeStorageKeyPart(mimeExtension || "bin");
++}
++
++export function makeStorageAssetKey(input: {
++  roomId: string;
++  pageId: string;
++  fileId: string;
++  fileName: string;
++  contentType: string;
++}): string {
++  return [
++    "mildang-product",
++    "handwriting-assets",
++    sanitizeStorageKeyPart(input.roomId),
++    sanitizeStorageKeyPart(input.pageId),
++    `${sanitizeStorageKeyPart(input.fileId)}.${getFileExtension(
++      input.fileName,
++      input.contentType,
++    )}`,
++  ].join("/");
++}
++
+ export function checkStorageHealth(serverUrl: string) {
+   return fetchStorageTrace({
+     serverUrl,
+@@ -143,6 +206,81 @@ export function uploadStorageJson(input: {
+   });
+ }
+ 
++export async function uploadStorageAsset(input: {
++  serverUrl: string;
++  key: string;
++  file: File;
++}): Promise<StorageAssetUploadResponse> {
++  const url = `${getStorageServerUrl(input.serverUrl)}/test/storage-asset?key=${encodeURIComponent(
++    input.key,
++  )}`;
++  const span = startFrontendSpan("client.storage.put-asset", {
++    "http.request.method": "POST",
++    "url.full": url,
++    "storage.operation": "put-asset",
++    "aws.s3.key": input.key,
++    "file.name": input.file.name,
++    "file.type": input.file.type || "application/octet-stream",
++    "file.size": input.file.size,
++    "http.request.body.size": input.file.size,
++  });
++  const traceCarrier = makeTraceCarrier(span);
++  span.setAttribute("traceparent", traceCarrier.traceparent ?? "");
++
++  try {
++    const response = await fetch(url, {
++      method: "POST",
++      headers: {
++        "content-type": input.file.type || "application/octet-stream",
++        "x-file-name": input.file.name,
++        ...traceCarrier,
++      },
++      body: input.file,
++    });
++    const responseText = await response.text();
++    const data = responseText ? JSON.parse(responseText) : undefined;
++
++    span.setAttributes({
++      "http.response.status_code": response.status,
++      "http.response.body.size": new TextEncoder().encode(responseText)
++        .byteLength,
++    });
++
++    if (!response.ok) {
++      recordSpanError(
++        span,
++        data && typeof data === "object" && "message" in data
++          ? String((data as { message?: unknown }).message)
++          : `asset upload failed with ${response.status}`,
++      );
++    }
++
++    return {
++      ok: response.ok,
++      status: response.status,
++      operation: "put-asset",
++      key: getResponseKey(data),
++      traceparent: traceCarrier.traceparent,
++      data,
++      bucket: getResponseString(data, "bucket"),
++      assetId: getResponseString(data, "assetId"),
++      objectUrl: getResponseString(data, "objectUrl"),
++      assetUrl: getResponseString(data, "assetUrl"),
++      presignedGetUrl: getResponseString(data, "presignedGetUrl"),
++      presignedExpiresIn: getResponseNumber(data, "presignedExpiresIn"),
++      contentType: getResponseString(data, "contentType"),
++      sizeBytes: getResponseNumber(data, "sizeBytes"),
++      sha256: getResponseString(data, "sha256"),
++      etag: getResponseString(data, "etag"),
++    };
++  } catch (error) {
++    recordSpanError(span, error);
++    throw error;
++  } finally {
++    span.end();
++  }
++}
++
+ export function getStorageJson(input: { serverUrl: string; key: string }) {
+   return fetchStorageTrace({
+     serverUrl: input.serverUrl,
+diff --git a/src/pages/editor-page.tsx b/src/pages/editor-page.tsx
+index 82037a0..23ea6aa 100644
+--- a/src/pages/editor-page.tsx
++++ b/src/pages/editor-page.tsx
+@@ -45,6 +45,12 @@ import {
+   loadProductHandwriting,
+   saveProductHandwriting,
+ } from "../lib/productTraceClient";
++import {
++  makeStorageAssetKey,
++  uploadStorageAsset,
++  type StorageAssetUploadResponse,
++} from "../lib/storageTraceClient";
++import { optimizeImageForUpload } from "../lib/imageUploadOptimization";
+ import type { EditorRenderStats } from "../components/editor/scene/EditorScene";
+ 
+ type ClampRange = {
+@@ -375,6 +381,32 @@ function getRotatedSharedGroupStroke(input: {
+   };
+ }
+ 
++function getStorageAssetUrl(
++  response: StorageAssetUploadResponse,
++): string | undefined {
++  return response.assetUrl ?? response.objectUrl ?? response.presignedGetUrl;
++}
++
++function getUploadedImageObject(input: {
++  object: WebGLObject;
++  upload: StorageAssetUploadResponse;
++}): WebGLObject | undefined {
++  const url = getStorageAssetUrl(input.upload);
++  if (!url) return undefined;
++
++  return {
++    ...input.object,
++    imageSrc: url,
++    imageFileId: input.object.imageFileId ?? input.upload.assetId,
++    imageUrl: url,
++    imageStorageKey: input.upload.key ?? input.object.imageStorageKey,
++    imageMimeType: input.upload.contentType ?? input.object.imageMimeType,
++    imageSizeBytes: input.upload.sizeBytes ?? input.object.imageSizeBytes,
++    imageSha256: input.upload.sha256 ?? input.object.imageSha256,
++    imageStatus: "uploaded",
++  };
++}
++
+ function EditorPage(): JSX.Element {
+   const realtimeInk = useRealtimeInk();
+   const [isPerfProbeEnabled] = useState(() => isUrlFlagEnabled("perfProbe"));
+@@ -409,6 +441,8 @@ function EditorPage(): JSX.Element {
+     initialTool,
+     sharedMaxLayer,
+   });
++  const editorObjectsRef = useRef(editor.objects);
++  const localImageObjectUrlsRef = useRef<Set<string>>(new Set());
+   const [pageZoom, setPageZoom] = useState(1);
+   const [comparisonExportRequestId, setComparisonExportRequestId] = useState(0);
+   const [localSaveStatus, setLocalSaveStatus] = useState<string>();
+@@ -461,11 +495,15 @@ function EditorPage(): JSX.Element {
+             ...editor.objects.filter(
+               (object) => !sharedObjectIds.has(object.id),
+             ),
++            ...realtimeInk.remoteObjects.filter(
++              (object) => !sharedObjectIds.has(object.id),
++            ),
+           ]
+         : editor.objects,
+     [
+       editor.objects,
+       realtimeInk.enabled,
++      realtimeInk.remoteObjects,
+       realtimeInk.sharedObjects,
+       sharedObjectIds,
+     ],
+@@ -492,9 +530,16 @@ function EditorPage(): JSX.Element {
+       if (localSaveStatusTimerRef.current !== undefined) {
+         window.clearTimeout(localSaveStatusTimerRef.current);
+       }
++      for (const url of localImageObjectUrlsRef.current) {
++        URL.revokeObjectURL(url);
++      }
++      localImageObjectUrlsRef.current.clear();
+     },
+     [],
+   );
++  useEffect(() => {
++    editorObjectsRef.current = editor.objects;
++  }, [editor.objects]);
+   const localStrokeIds = useMemo(
+     () => new Set(editor.strokes.map((stroke) => stroke.id)),
+     [editor.strokes],
+@@ -543,6 +588,15 @@ function EditorPage(): JSX.Element {
+           fontSize: object.fontSize,
+           fontFamily: object.fontFamily,
+           color: object.color,
++          imageSrc: object.imageSrc,
++          imageFileId: object.imageFileId,
++          imageUrl: object.imageUrl,
++          imageThumbnailUrl: object.imageThumbnailUrl,
++          imageStorageKey: object.imageStorageKey,
++          imageMimeType: object.imageMimeType,
++          imageSizeBytes: object.imageSizeBytes,
++          imageSha256: object.imageSha256,
++          imageStatus: object.imageStatus,
+         });
+       }
+     },
+@@ -951,13 +1005,74 @@ function EditorPage(): JSX.Element {
+   }, []);
+   const handleImageFileChange = useCallback(
+     (event: Parameters<typeof editor.addImageFromFile>[0]) => {
+-      editor.addImageFromFile(event, (object) => {
+-        localRealtimeObjectIdsRef.current.add(object.id);
+-        committedObjectSnapshotsRef.current.set(
+-          object.id,
+-          JSON.stringify(object),
+-        );
+-        realtimeInk.commitObjects([object]);
++      editor.addImageFromFile(event, (object, file) => {
++        if (object.imageSrc?.startsWith("blob:")) {
++          localImageObjectUrlsRef.current.add(object.imageSrc);
++        }
++
++        const uploadImage = async (): Promise<void> => {
++          editor.updateObject(object.id, { imageStatus: "uploading" });
++
++          try {
++            const optimized = await optimizeImageForUpload(file);
++            const uploadFile = optimized.file;
++            const key = makeStorageAssetKey({
++              roomId: realtimeInk.roomId,
++              pageId: realtimeInk.pageId,
++              fileId: object.imageFileId ?? object.id,
++              fileName: uploadFile.name,
++              contentType: uploadFile.type || "application/octet-stream",
++            });
++            const upload = await uploadStorageAsset({
++              serverUrl: realtimeInk.serverUrl,
++              key,
++              file: uploadFile,
++            });
++
++            if (!upload.ok) {
++              throw new Error(`Image asset upload failed: ${upload.status}`);
++            }
++
++            const currentObject =
++              editorObjectsRef.current.find((item) => item.id === object.id) ??
++              object;
++            const uploadedObject = getUploadedImageObject({
++              object: currentObject,
++              upload,
++            });
++            if (!uploadedObject) {
++              throw new Error("Image asset upload did not return a URL");
++            }
++
++            editor.updateObject(object.id, {
++              imageSrc: uploadedObject.imageSrc,
++              imageFileId: uploadedObject.imageFileId,
++              imageUrl: uploadedObject.imageUrl,
++              imageStorageKey: uploadedObject.imageStorageKey,
++              imageMimeType: uploadedObject.imageMimeType,
++              imageSizeBytes: uploadedObject.imageSizeBytes,
++              imageSha256: uploadedObject.imageSha256,
++              imageStatus: uploadedObject.imageStatus,
++            });
++
++            if (object.imageSrc?.startsWith("blob:")) {
++              URL.revokeObjectURL(object.imageSrc);
++              localImageObjectUrlsRef.current.delete(object.imageSrc);
++            }
++
++            localRealtimeObjectIdsRef.current.add(uploadedObject.id);
++            committedObjectSnapshotsRef.current.set(
++              uploadedObject.id,
++              JSON.stringify(uploadedObject),
++            );
++            realtimeInk.commitObjects([uploadedObject]);
++          } catch (error) {
++            console.error("Failed to upload image asset", error);
++            editor.updateObject(object.id, { imageStatus: "error" });
++          }
++        };
++
++        void uploadImage();
+       });
+     },
+     [editor, realtimeInk],
+diff --git a/src/types/editor.ts b/src/types/editor.ts
+index 44ed70c..4d09e6e 100644
+--- a/src/types/editor.ts
++++ b/src/types/editor.ts
+@@ -1,5 +1,6 @@
+ export type Tool = "answer" | "pen" | "select" | "erase" | "pan";
+ export type ObjectKind = "text" | "image";
++export type ImageAssetStatus = "local" | "uploading" | "uploaded" | "error";
+ 
+ export type Point2D = {
+   x: number;
+@@ -39,6 +40,14 @@ export type WebGLObject = {
+   imageSrc?: string;
+   imageBackground?: string;
+   imageName?: string;
++  imageFileId?: string;
++  imageUrl?: string;
++  imageThumbnailUrl?: string;
++  imageStorageKey?: string;
++  imageMimeType?: string;
++  imageSizeBytes?: number;
++  imageSha256?: string;
++  imageStatus?: ImageAssetStatus;
+ };
+ 
+ export type SelectionItem =

@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Frontend (Vite)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "Realtime Backend (handwriting)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:realtime"],
+      "port": 3000
+    },
+    {
+      "name": "SigNoz (observability)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:signoz"],
+      "port": 8080
+    }
+  ]
+}

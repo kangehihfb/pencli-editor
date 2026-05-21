@@ -1,6 +1,6 @@
 import { Html } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FocusEvent, KeyboardEvent } from "react";
 import * as THREE from "three";
 import { getEditorTextFontFamily } from "../../../lib/editorTextFonts";
@@ -105,7 +105,7 @@ export function TextEditOverlay({
     restoreScrollAfterBrowserFocus();
   }, [captureScrollPosition, restoreScrollAfterBrowserFocus]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     focusTextarea();
     const animationFrame = requestAnimationFrame(focusTextarea);
     const fallbackTimer = window.setTimeout(focusTextarea, 80);

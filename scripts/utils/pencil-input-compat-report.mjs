@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, '..');
+const projectRoot = path.resolve(__dirname, '../..');
 
 const targetUrl = process.argv[2] ?? 'http://127.0.0.1:5173/';
 const outputDir = path.resolve(projectRoot, process.argv[3] ?? 'export-results/pencil-input');

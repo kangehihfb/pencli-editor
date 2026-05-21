@@ -537,6 +537,10 @@ button {
   );
 }
 
+.mobile-canvas-controls {
+  display: none;
+}
+
 .handwriting-tool-tab {
   display: flex;
   align-items: center;
@@ -1400,6 +1404,9 @@ button {
   white-space: pre;
   text-shadow: none;
   scrollbar-width: none;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }
 
 .text-edit-overlay:focus {
@@ -1427,11 +1434,16 @@ button {
 
 @media (max-width: 860px) {
   :root {
-    --sidebar-width: 224px;
+    --sidebar-width: 0px;
+  }
+
+  .whiteboard-shell {
+    grid-template-rows: 54px 1fr;
   }
 
   .whiteboard-toolbar {
-    padding: 0 14px;
+    min-height: 54px;
+    padding: 0 12px;
   }
 
   .lesson-divider,
@@ -1454,16 +1466,57 @@ button {
   }
 
   .editor-tool-stack {
-    top: 76px;
-    right: 10px;
-    left: auto;
-    transform: translate(var(--tool-tab-x, 0px), var(--tool-tab-y, 0px));
+    top: 106px;
+    right: 8px;
+    left: 8px;
+    transform: translateY(var(--tool-tab-y, 0px));
   }
 
   .handwriting-tool-tab {
-    max-width: min(620px, calc(100vw - 20px));
-    min-height: 42px;
-    padding: 4px 6px;
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px;
+    overflow: visible;
+  }
+
+  .tool-tab-drag-handle,
+  .edit-history-group,
+  .layer-group,
+  .desktop-utility-separator,
+  .desktop-utility-group,
+  .text-option-group,
+  .toolbar-separator {
+    display: none;
+  }
+
+  .primary-tool-group {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .color-group,
+  .size-group {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .palette-swatch {
+    width: 20px;
+    height: 20px;
+  }
+
+  .color-picker-wrap {
+    width: 24px;
+    height: 24px;
+  }
+
+  .stroke-size-button {
+    width: 32px;
+    height: 30px;
   }
 
   .icon-button {
@@ -1475,29 +1528,118 @@ button {
     display: none;
   }
 
+  .exam-library-panel {
+    top: 0;
+    right: 0;
+    bottom: auto;
+    left: 0;
+    width: auto;
+    height: 48px;
+    display: block;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 6px 10px;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    box-shadow: 0 8px 18px rgba(32, 36, 45, 0.06);
+    touch-action: pan-x;
+    scrollbar-width: none;
+  }
+
+  .exam-library-panel::-webkit-scrollbar {
+    display: none;
+  }
+
+  .exam-library-list {
+    display: flex;
+    width: max-content;
+    gap: 8px;
+  }
+
+  .exam-library-item {
+    width: auto;
+    min-height: 34px;
+    grid-template-columns: 14px auto;
+    gap: 7px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: #f6f8fa;
+  }
+
+  .exam-library-item.active {
+    background: #dff3eb;
+  }
+
+  .exam-status-dot {
+    width: 12px;
+    height: 12px;
+    border-width: 1px;
+  }
+
+  .exam-status-dot::after {
+    width: 5px;
+    height: 5px;
+  }
+
+  .exam-library-meta {
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
   .stage-canvas-frame {
-    top: 150px;
-    right: 14px;
-    bottom: 18px;
-    left: calc(var(--sidebar-width) + 14px);
+    top: 136px;
+    right: 10px;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    left: 10px;
   }
 
   .stage-canvas-shell {
-    width: min(100%, calc((100vh - 272px) * var(--exam-aspect, 1)));
+    width: min(100%, calc((100dvh - 276px) * var(--exam-aspect, 1)));
   }
 
-  .exam-library-panel {
-    padding-top: 58px;
+  .stage-canvas-frame.is-fixed-page .react-exam {
+    padding: 8px 18px 24px;
   }
 
-  .study-progress-card strong {
-    font-size: 34px;
+  .stage-canvas-frame.is-fixed-page .react-exam-header {
+    margin-bottom: 36px;
   }
 
-  .study-progress-tabs {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 4px;
+  .stage-canvas-frame.is-fixed-page .react-exam-body {
+    font-size: 22px;
+  }
+
+  .stage-canvas-frame.is-fixed-page .react-exam-questions {
+    margin-top: 24px;
+  }
+
+  .stage-canvas-frame.is-fixed-page .exam-choice-list {
+    gap: 16px;
+    margin-bottom: 36px;
+  }
+
+  .mobile-canvas-controls {
+    position: fixed;
+    right: 10px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    left: 10px;
+    z-index: 132;
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    pointer-events: auto;
+  }
+
+  .mobile-control-group {
+    display: inline-flex;
+    gap: 3px;
+    padding: 4px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 8px 20px rgba(32, 36, 45, 0.11);
+    backdrop-filter: blur(10px);
   }
 }
 
@@ -1506,8 +1648,16 @@ button {
     --sidebar-width: 0px;
   }
 
+  .whiteboard-toolbar {
+    padding: 0 10px;
+  }
+
   .lesson-header-actions {
     margin-left: 8px;
+  }
+
+  .lesson-title {
+    font-size: 15px;
   }
 
   .handwriting-toggle {
@@ -1528,13 +1678,48 @@ button {
     transform: translateX(20px);
   }
 
-  .exam-library-panel {
-    display: none;
+  .editor-tool-stack {
+    top: 102px;
+  }
+
+  .handwriting-tool-tab {
+    gap: 5px;
+    padding: 5px;
+  }
+
+  .primary-tool-group {
+    gap: 3px;
+  }
+
+  .primary-tool-group .icon-button {
+    width: 31px;
+    height: 31px;
+  }
+
+  .color-group {
+    gap: 6px;
+  }
+
+  .size-group {
+    gap: 0;
+  }
+
+  .mobile-canvas-controls {
+    right: 8px;
+    left: 8px;
+    gap: 6px;
+  }
+
+  .mobile-control-group {
+    gap: 2px;
+    padding: 3px;
   }
 
   .stage-canvas-frame {
-    right: 10px;
-    left: 10px;
+    top: 132px;
+    right: 8px;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    left: 8px;
   }
 
   .stage-canvas-shell {
@@ -1544,39 +1729,45 @@ button {
   }
 
   .react-exam {
-    padding: 4px 14px 24px;
+    padding: 4px 12px 18px;
   }
 
   .react-exam-header {
-    margin-bottom: 48px;
+    margin-bottom: 28px;
   }
 
   .react-exam-body {
-    font-size: 22px;
+    font-size: 19px;
   }
 
   .react-exam-questions {
-    margin-top: 32px;
+    margin-top: 20px;
   }
 
   .exam-choice-list {
-    gap: 14px;
-    margin-bottom: 44px;
+    gap: 10px;
+    margin-bottom: 28px;
   }
 
-  .study-progress-label,
-  .study-progress-tabs,
-  .exam-library-meta,
-  .study-summary-row {
-    font-size: 12px;
+  .stage-canvas-frame.is-fixed-page .react-exam {
+    padding: 8px 14px 18px;
   }
 
-  .exam-library-item {
-    grid-template-columns: 24px 1fr;
+  .stage-canvas-frame.is-fixed-page .react-exam-header {
+    margin-bottom: 24px;
   }
 
-  .exam-library-item strong {
-    display: none;
+  .stage-canvas-frame.is-fixed-page .react-exam-body {
+    font-size: 19px;
+  }
+
+  .stage-canvas-frame.is-fixed-page .react-exam-questions {
+    margin-top: 18px;
+  }
+
+  .stage-canvas-frame.is-fixed-page .exam-choice-list {
+    gap: 10px;
+    margin-bottom: 28px;
   }
 
   .whiteboard-footer {

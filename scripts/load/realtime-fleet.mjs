@@ -6,7 +6,7 @@ import { chromium } from "playwright";
 import { io } from "socket.io-client";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, "..");
+const projectRoot = path.resolve(__dirname, "../..");
 
 const defaultViewport = {
   width: 1280,
@@ -31,16 +31,20 @@ Use this for 20/50/100-user local load checks without Docker/Selenoid.
 
 Usage:
   npm run load:realtime-fleet -- --users=100 --headed=4 --room=load-room --token="$INK_TOKEN"
+  node scripts/load/realtime-fleet.mjs --users=100 --headed=4
 
 Options:
   --url=<url>              Frontend URL. Default: http://127.0.0.1:5178/
   --server=<url>           Realtime ink server URL. Default: http://127.0.0.1:3000
   --token=<jwt>            Handwriting server JWT. Or set INK_TOKEN.
   --room=<room-id>         Shared room id. Default: load:<timestamp>
+  --actor-prefix=<prefix>  Actor id prefix. Use a different prefix per machine.
   --users=<n>              Total virtual browser clients. Default: 20
   --headed=<n>             Visible browser windows. Default: 2
   --headless-browsers=<n>  Headless browser process shards. Default: up to 4
-  --mode=<idle|draw>       idle only joins room, draw also writes strokes. Default: draw
+  --mode=<idle|draw>       idle only joins room, draw also runs the selected scenario. Default: draw
+  --scenario=<pen|text|mixed> Synthetic browser action profile. Default: pen
+  --text-every-strokes=<n> In mixed mode, selected clients add text every n strokes. Default: 3
   --duration=<ms>          Run duration. Default: ${defaultDurationMs}
   --draw-interval=<ms>     Delay between strokes per drawing client. Default: ${defaultDrawIntervalMs}
   --draw-concurrency=<n>   Max simultaneous synthetic stroke actions. Default: ${defaultMaxDrawConcurrency}
@@ -54,6 +58,7 @@ Options:
   --realtime-timeout=<ms>  Wait for Socket.IO connected status. Default: 60000
   --tool-timeout=<ms>      Wait for toolbar tool selection. Default: 30000
   --click-pen=<0|1>        Select the pen tool for clients. Default: enabled in draw mode
+  --receive-trace-sample-rate=<n> Frontend receive span sample rate. Default: 1
   --app-metrics=<0|1>      Collect in-app FPS/Yjs/WebGL/canvas metrics. Default: 1
   --probe=<0|1>            Show app perf probe UI in fleet clients. Default: 0
   --debug=<0|1>            Enable app ink debug query flag. Default: 0
@@ -224,6 +229,10 @@ function makeClientUrl(config, index) {
     "inkDebug",
     config.debug || config.waitRealtime ? "1" : "0",
   );
+  url.searchParams.set(
+    "inkTraceReceiveSampleRate",
+    String(config.receiveTraceSampleRate),
+  );
   return url.toString();
 }
 
@@ -238,6 +247,12 @@ function makeManualUrl(config) {
   url.searchParams.set("perfProbe", "1");
   url.searchParams.set("inkDebug", "1");
   return url.toString();
+}
+
+function shouldRunScenarioStep(client, scenarioStep) {
+  if (scenarioStep === "pen") return true;
+  if (scenarioStep === "text") return client.index % 10 === 0;
+  return false;
 }
 
 function getWindowPosition(index, width, height) {
@@ -427,6 +442,7 @@ async function collectClientMetrics(client, config) {
           url: window.location.href,
           title: document.title,
           app: window.__realtimeInkPerfSnapshot,
+          receiveDiagnostics: window.__realtimeInkReceiveDiagnostics,
           browser: {
             visibilityState: document.visibilityState,
             userAgent: navigator.userAgent,
@@ -500,6 +516,50 @@ async function drawStroke(page, client, config) {
   client.lastStrokeAt = Date.now();
 }
 
+async function addTextObject(page, client, config) {
+  const button = page.getByRole("button", {
+    name: "텍스트 추가",
+    exact: true,
+  });
+  await button.click({
+    force: true,
+    timeout: config.toolTimeoutMs,
+  });
+  client.objectsAdded += 1;
+  client.lastObjectAt = Date.now();
+}
+
+async function runScenarioAction(page, client, config) {
+  if (config.scenario === "pen") {
+    await drawStroke(page, client, config);
+    return;
+  }
+
+  if (config.scenario === "text") {
+    if (shouldRunScenarioStep(client, "text")) {
+      await addTextObject(page, client, config);
+    }
+    return;
+  }
+
+  if (config.scenario === "mixed") {
+    if (
+      shouldRunScenarioStep(client, "text") &&
+      client.strokesDrawn > 0 &&
+      client.strokesDrawn % config.textEveryStrokes === 0 &&
+      client.lastTextStrokeCount !== client.strokesDrawn
+    ) {
+      await addTextObject(page, client, config);
+      client.lastTextStrokeCount = client.strokesDrawn;
+      return;
+    }
+    await drawStroke(page, client, config);
+    return;
+  }
+
+  throw new Error(`Unsupported scenario: ${config.scenario}`);
+}
+
 async function startDrawingLoop(page, client, config, state) {
   await sleep(Math.random() * config.drawIntervalMs);
   let consecutiveErrors = 0;
@@ -508,7 +568,7 @@ async function startDrawingLoop(page, client, config, state) {
     try {
       await state.runDrawTask(async () => {
         if (state.stopping) return;
-        await drawStroke(page, client, config);
+        await runScenarioAction(page, client, config);
       });
       consecutiveErrors = 0;
     } catch (error) {
@@ -539,6 +599,10 @@ function summarizeClients(clients) {
     (client) => client.realtimeStatus === "connected",
   ).length;
   const strokes = clients.reduce((sum, client) => sum + client.strokesDrawn, 0);
+  const objectsAdded = clients.reduce(
+    (sum, client) => sum + client.objectsAdded,
+    0,
+  );
   const messages = clients.reduce(
     (sum, client) => sum + client.messages.length,
     0,
@@ -558,8 +622,23 @@ function summarizeClients(clients) {
   const p95FrameValues = frameMetrics
     .map((frame) => frame.p95FrameMs)
     .filter((value) => Number.isFinite(value));
+  const longTaskCounts = appMetrics
+    .map((metrics) => metrics.longTasks?.count)
+    .filter((value) => Number.isFinite(value));
+  const longTaskMaxDurations = appMetrics
+    .map((metrics) => metrics.longTasks?.maxDurationMs)
+    .filter((value) => Number.isFinite(value));
   const averagePointsPerStrokeValues = canvasMetrics
     .map((canvas) => canvas.averagePointsPerStroke)
+    .filter((value) => Number.isFinite(value));
+  const receiveDiagnostics = clients
+    .map((client) => client.collectedMetrics?.receiveDiagnostics)
+    .filter(Boolean);
+  const receiveHandlerAverageValues = receiveDiagnostics
+    .map((diagnostics) => diagnostics.handlerMs?.average)
+    .filter((value) => Number.isFinite(value));
+  const receiveHandlerMaxValues = receiveDiagnostics
+    .map((diagnostics) => diagnostics.handlerMs?.max)
     .filter((value) => Number.isFinite(value));
 
   return {
@@ -567,10 +646,36 @@ function summarizeClients(clients) {
     failed,
     connected,
     strokes,
+    objectsAdded,
     messages,
     appMetrics: appMetrics.length,
     fps: summarizeNumbers(fpsValues),
     p95FrameMs: summarizeNumbers(p95FrameValues),
+    longTasks: {
+      count: summarizeNumbers(longTaskCounts),
+      maxDurationMs: summarizeNumbers(longTaskMaxDurations),
+    },
+    receive: {
+      samples: receiveDiagnostics.length,
+      received: receiveDiagnostics.reduce(
+        (sum, diagnostics) => sum + diagnostics.received,
+        0,
+      ),
+      applied: receiveDiagnostics.reduce(
+        (sum, diagnostics) => sum + diagnostics.applied,
+        0,
+      ),
+      ignored: receiveDiagnostics.reduce(
+        (sum, diagnostics) => sum + diagnostics.ignored,
+        0,
+      ),
+      errors: receiveDiagnostics.reduce(
+        (sum, diagnostics) => sum + diagnostics.errors,
+        0,
+      ),
+      handlerAverageMs: summarizeNumbers(receiveHandlerAverageValues),
+      handlerMaxMs: summarizeNumbers(receiveHandlerMaxValues),
+    },
     averagePointsPerStroke: summarizeNumbers(averagePointsPerStrokeValues),
     consistency: summarizeConsistency(appMetrics),
   };
@@ -744,8 +849,12 @@ async function writeReport(reportPath, config, clients, startedAt, endedAt) {
       failed: client.failed,
       realtimeStatus: client.realtimeStatus,
       strokesDrawn: client.strokesDrawn,
+      objectsAdded: client.objectsAdded,
       lastStrokeAt: client.lastStrokeAt
         ? new Date(client.lastStrokeAt).toISOString()
+        : undefined,
+      lastObjectAt: client.lastObjectAt
+        ? new Date(client.lastObjectAt).toISOString()
         : undefined,
       messages: client.messages.slice(-20).map((message) => ({
         ...message,
@@ -826,6 +935,18 @@ async function main() {
       0,
     ),
     mode: args.mode ?? process.env.REALTIME_FLEET_MODE ?? "draw",
+    scenario: args.scenario ?? process.env.REALTIME_FLEET_SCENARIO ?? "pen",
+    textEveryStrokes: parseInteger(
+      args["text-every-strokes"] ??
+        process.env.REALTIME_FLEET_TEXT_EVERY_STROKES,
+      3,
+      1,
+    ),
+    receiveTraceSampleRate: Number(
+      args["receive-trace-sample-rate"] ??
+        process.env.REALTIME_FLEET_RECEIVE_TRACE_SAMPLE_RATE ??
+        1,
+    ),
     startupTimeoutMs: parseInteger(
       args["startup-timeout"] ?? process.env.REALTIME_FLEET_STARTUP_TIMEOUT_MS,
       60_000,
@@ -885,9 +1006,18 @@ async function main() {
   if (!["idle", "draw"].includes(config.mode)) {
     throw new Error(`Unsupported mode: ${config.mode}. Use idle or draw.`);
   }
+  if (!["pen", "text", "mixed"].includes(config.scenario)) {
+    throw new Error(
+      `Unsupported scenario: ${config.scenario}. Use pen, text, or mixed.`,
+    );
+  }
+  config.receiveTraceSampleRate = Math.min(
+    1,
+    Math.max(0, config.receiveTraceSampleRate),
+  );
   config.clickPen = parseBoolean(
     args["click-pen"] ?? process.env.REALTIME_FLEET_CLICK_PEN,
-    config.mode === "draw",
+    config.mode === "draw" && config.scenario !== "text",
   );
 
   if (!config.token) {
@@ -915,6 +1045,7 @@ async function main() {
         headed: config.headed,
         headlessBrowsers: config.headlessBrowsers,
         mode: config.mode,
+        scenario: config.scenario,
         durationMs: config.durationMs,
         drawConcurrency: config.drawConcurrency,
         drawErrorBackoffMs: config.drawErrorBackoffMs,
@@ -1027,6 +1158,9 @@ async function main() {
       canvasBox: undefined,
       strokesDrawn: 0,
       lastStrokeAt: undefined,
+      objectsAdded: 0,
+      lastObjectAt: undefined,
+      lastTextStrokeCount: undefined,
     };
     clients.push(client);
 
