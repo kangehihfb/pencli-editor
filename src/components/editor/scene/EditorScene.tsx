@@ -26,6 +26,10 @@ import {
   isPointNearStroke,
   normalizeRotation,
 } from "../../../lib/sceneMath";
+import {
+  getPointerPointsFromEvent,
+  getPreferredPointerMoveEventName,
+} from "../../../lib/pointerInput";
 import type {
   DragState,
   EditingText,
@@ -89,25 +93,6 @@ function getOrthographicVisibleSize(camera: THREE.OrthographicCamera) {
 
 function getSceneHitRenderOrder(hit: SceneHit) {
   return hit.layer * 10 + (hit.type === "stroke" ? 2 : 0);
-}
-
-function getCoalescedPointerEvents(event: PointerEvent) {
-  const coalescedEvents =
-    typeof event.getCoalescedEvents === "function"
-      ? event.getCoalescedEvents()
-      : [];
-  if (coalescedEvents.length === 0) return [event];
-
-  const lastEvent = coalescedEvents.at(-1);
-  if (
-    lastEvent.clientX !== event.clientX ||
-    lastEvent.clientY !== event.clientY ||
-    lastEvent.pressure !== event.pressure
-  ) {
-    return [...coalescedEvents, event];
-  }
-
-  return coalescedEvents;
 }
 
 function translateBounds(bounds: PointBounds, delta: Point2D): PointBounds {
@@ -252,11 +237,14 @@ export function EditorScene({
   const drawingBoundsReference = useRef(drawingBounds);
   const isClampingCameraReference = useRef(false);
   const [marqueeState, setMarqueeState] = useState<MarqueeState>();
-  const [groupTransformBox, setGroupTransformBox] = useState<{
-    itemsKey: string;
-    bounds: PointBounds;
-    rotation: number;
-  } | undefined>();
+  const [groupTransformBox, setGroupTransformBox] = useState<
+    | {
+        itemsKey: string;
+        bounds: PointBounds;
+        rotation: number;
+      }
+    | undefined
+  >();
   const isDrawingReference = useRef(false);
   const lastRenderStatsAtReference = useRef(0);
   const activePointerIdReference = useRef<number>();
@@ -330,9 +318,7 @@ export function EditorScene({
         points: gl.info.render.points,
         geometries: gl.info.memory.geometries,
         textures: gl.info.memory.textures,
-        programs: Array.isArray(gl.info.programs)
-          ? gl.info.programs.length
-          : 0,
+        programs: Array.isArray(gl.info.programs) ? gl.info.programs.length : 0,
       });
     });
   }, [gl, onRenderStats]);
@@ -591,9 +577,7 @@ export function EditorScene({
 
   const getPointerPointsFromClientEvent = useCallback(
     (event: PointerEvent) =>
-      getCoalescedPointerEvents(event)
-        .map((pointerEvent) => getPointerPointFromClient(pointerEvent))
-        .filter(Boolean),
+      getPointerPointsFromEvent(event, getPointerPointFromClient),
     [getPointerPointFromClient],
   );
 
@@ -792,8 +776,7 @@ export function EditorScene({
       }
     };
 
-    const drawingMoveEvent =
-      "onpointerrawupdate" in window ? "pointerrawupdate" : "pointermove";
+    const drawingMoveEvent = getPreferredPointerMoveEventName(window);
     window.addEventListener(drawingMoveEvent, handleDrawingPointerMove, true);
     return () => {
       window.removeEventListener(

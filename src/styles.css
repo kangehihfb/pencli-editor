@@ -718,33 +718,45 @@ button {
 }
 
 .palette-swatch {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
   flex: 0 0 auto;
+  padding: 0;
   border: 1px solid rgba(32, 36, 45, 0.08);
-  border-radius: 50%;
+  border-radius: 999px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-clip: padding-box;
   cursor: pointer;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.36),
     0 1px 3px rgba(32, 36, 45, 0.12);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .palette-swatch.active {
   border-color: #fff;
-  outline: 2px solid #253440;
-  outline-offset: 2px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.36),
+    0 0 0 2px #fff,
+    0 0 0 4px #253440;
 }
 
 .color-picker-wrap {
   position: relative;
   display: inline-grid;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
   flex: 0 0 auto;
   place-items: center;
   overflow: hidden;
   border: 1px solid rgba(32, 36, 45, 0.08);
-  border-radius: 50%;
+  border-radius: 999px;
   background: linear-gradient(
     135deg,
     #f05555,
@@ -755,11 +767,13 @@ button {
   );
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(32, 36, 45, 0.12);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .color-picker-input {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border: none;
   padding: 0;
   opacity: 0;

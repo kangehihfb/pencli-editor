@@ -18,57 +18,140 @@ import {
 function createStrokeRibbonGeometry(
   points: Point2D[],
   radius: number,
-  jointSegments = 6,
+  capSegments = 18,
 ) {
+  const filteredPoints: Point2D[] = [];
+  for (const point of points) {
+    const last = filteredPoints.at(-1);
+    if (!last || Math.hypot(point.x - last.x, point.y - last.y) >= 0.001) {
+      filteredPoints.push(point);
+    }
+  }
+
+  if (filteredPoints.length < 2) return undefined;
+
   const vertices: number[] = [];
   const indices: number[] = [];
 
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const current = points[index];
-    const next = points[index + 1];
-    const dx = next.x - current.x;
-    const dy = next.y - current.y;
-    const length = Math.hypot(dx, dy);
-    if (length < 0.001) continue;
-
-    const normalX = -dy / length;
-    const normalY = dx / length;
-    const base = vertices.length / 3;
-    vertices.push(
-      current.x + normalX * radius,
-      current.y + normalY * radius,
-      0,
-      current.x - normalX * radius,
-      current.y - normalY * radius,
-      0,
-      next.x + normalX * radius,
-      next.y + normalY * radius,
-      0,
-      next.x - normalX * radius,
-      next.y - normalY * radius,
-      0,
-    );
-    indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
-  }
-
-  for (const [index, point] of points.entries()) {
-    const isEndpoint = index === 0 || index === points.length - 1;
-    const segments = isEndpoint ? jointSegments + 2 : jointSegments;
-    const base = vertices.length / 3;
+  const pushVertex = (point: Point2D) => {
+    const index = vertices.length / 3;
     vertices.push(point.x, point.y, 0);
+    return index;
+  };
 
-    for (let segment = 0; segment <= segments; segment += 1) {
-      const angle = (segment / segments) * Math.PI * 2;
+  const getDirection = (from: Point2D, to: Point2D) => {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 0.001) return undefined;
+    return { x: dx / length, y: dy / length };
+  };
+
+  const getNormal = (direction: Point2D) => ({
+    x: -direction.y,
+    y: direction.x,
+  });
+
+  const getJoinOffset = (index: number) => {
+    const current = filteredPoints[index];
+    const previous = filteredPoints[index - 1];
+    const next = filteredPoints[index + 1];
+    const fallbackDirection = next
+      ? getDirection(current, next)
+      : previous
+        ? getDirection(previous, current)
+        : undefined;
+    const fallbackNormal = fallbackDirection
+      ? getNormal(fallbackDirection)
+      : { x: 0, y: 1 };
+
+    if (!previous || !next) {
+      return { x: fallbackNormal.x * radius, y: fallbackNormal.y * radius };
+    }
+
+    const previousDirection = getDirection(previous, current);
+    const nextDirection = getDirection(current, next);
+    if (!previousDirection || !nextDirection) {
+      return { x: fallbackNormal.x * radius, y: fallbackNormal.y * radius };
+    }
+
+    const previousNormal = getNormal(previousDirection);
+    const nextNormal = getNormal(nextDirection);
+    const joinNormal = {
+      x: previousNormal.x + nextNormal.x,
+      y: previousNormal.y + nextNormal.y,
+    };
+    const joinLength = Math.hypot(joinNormal.x, joinNormal.y);
+    if (joinLength < 0.001) {
+      return { x: nextNormal.x * radius, y: nextNormal.y * radius };
+    }
+
+    joinNormal.x /= joinLength;
+    joinNormal.y /= joinLength;
+    return { x: joinNormal.x * radius, y: joinNormal.y * radius };
+  };
+
+  const addRoundCap = (
+    center: Point2D,
+    direction: Point2D,
+    isStart: boolean,
+  ) => {
+    const base = vertices.length / 3;
+    vertices.push(center.x, center.y, 0);
+    const directionAngle = Math.atan2(direction.y, direction.x);
+    const startAngle = isStart
+      ? directionAngle + Math.PI / 2
+      : directionAngle - Math.PI / 2;
+    const endAngle = startAngle + Math.PI;
+
+    for (let segment = 0; segment <= capSegments; segment += 1) {
+      const progress = segment / capSegments;
+      const angle = startAngle + (endAngle - startAngle) * progress;
       vertices.push(
-        point.x + Math.cos(angle) * radius,
-        point.y + Math.sin(angle) * radius,
+        center.x + Math.cos(angle) * radius,
+        center.y + Math.sin(angle) * radius,
         0,
       );
     }
 
-    for (let segment = 0; segment < segments; segment += 1) {
+    for (let segment = 0; segment < capSegments; segment += 1) {
       indices.push(base, base + segment + 1, base + segment + 2);
     }
+  };
+
+  const sideIndices = filteredPoints.map((point, index) => {
+    const offset = getJoinOffset(index);
+    return {
+      left: pushVertex({ x: point.x + offset.x, y: point.y + offset.y }),
+      right: pushVertex({ x: point.x - offset.x, y: point.y - offset.y }),
+    };
+  });
+
+  for (let index = 0; index < sideIndices.length - 1; index += 1) {
+    const current = sideIndices[index];
+    const next = sideIndices[index + 1];
+    indices.push(
+      current.left,
+      current.right,
+      next.left,
+      current.right,
+      next.right,
+      next.left,
+    );
+  }
+
+  const firstDirection = getDirection(filteredPoints[0], filteredPoints[1]);
+  const lastDirection = getDirection(
+    filteredPoints[filteredPoints.length - 2],
+    filteredPoints[filteredPoints.length - 1],
+  );
+  if (firstDirection) addRoundCap(filteredPoints[0], firstDirection, true);
+  if (lastDirection) {
+    addRoundCap(
+      filteredPoints[filteredPoints.length - 1],
+      lastDirection,
+      false,
+    );
   }
 
   if (vertices.length === 0 || indices.length === 0) return undefined;
@@ -79,7 +162,6 @@ function createStrokeRibbonGeometry(
     new THREE.Float32BufferAttribute(vertices, 3),
   );
   geometry.setIndex(indices);
-  geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
   return geometry;
 }
@@ -142,21 +224,13 @@ export function StrokeMesh({
         });
     if (sampledPoints.length < 2) return undefined;
     const pickerRadius = Math.max(stroke.size * 1.45, stroke.size + 1.8);
-    const visual = createStrokeRibbonGeometry(
-      sampledPoints,
-      stroke.size,
-      5,
-    );
+    const visual = createStrokeRibbonGeometry(sampledPoints, stroke.size, 18);
     if (!visual) return undefined;
 
     return {
       visual,
       picker: hitTestEnabled
-        ? createStrokeRibbonGeometry(
-            sampledPoints,
-            pickerRadius,
-            5,
-          )
+        ? createStrokeRibbonGeometry(sampledPoints, pickerRadius, 18)
         : undefined,
     };
   }, [

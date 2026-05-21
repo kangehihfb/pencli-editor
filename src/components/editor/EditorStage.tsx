@@ -6,6 +6,11 @@ import type { ExamPreset } from "../../data/examPresets";
 import { exportPageImage } from "../../lib/exportPageImage";
 import { downloadClientPageExportComparison } from "../../lib/pageExportMethods";
 import { PAGE_HEIGHT, PAGE_WIDTH } from "../../lib/pageGeometry";
+import {
+  getPointerPointsFromEvent,
+  getPreferredPointerMoveEventName,
+} from "../../lib/pointerInput";
+import type { Point2D } from "../../types/editor";
 import { PerformanceMonitor } from "./PerformanceMonitor";
 import { EditorScene } from "./scene/EditorScene";
 import type { EditorSceneProps as EditorSceneProperties } from "./scene/EditorScene";
@@ -647,10 +652,11 @@ ${JSON.stringify(touchEvents.slice(-80), undefined, 2)}
       };
     };
 
-    const beginStroke = (clientX: number, clientY: number) => {
-      if (isInputDrawingReference.current) return true;
+    const getInputPointFromPointerEvent = (event: PointerEvent) =>
+      getInputPoint(event.clientX, event.clientY);
 
-      const point = getInputPoint(clientX, clientY);
+    const beginStrokeAtPoint = (point: Point2D | undefined) => {
+      if (isInputDrawingReference.current) return true;
       if (!point) return false;
 
       isInputDrawingReference.current = true;
@@ -658,14 +664,21 @@ ${JSON.stringify(touchEvents.slice(-80), undefined, 2)}
       return true;
     };
 
-    const appendStroke = (clientX: number, clientY: number) => {
-      if (!isInputDrawingReference.current && !beginStroke(clientX, clientY))
-        return;
+    const beginStroke = (clientX: number, clientY: number) =>
+      beginStrokeAtPoint(getInputPoint(clientX, clientY));
 
-      const point = getInputPoint(clientX, clientY);
-      if (!point) return;
+    const appendStrokePoints = (points: Point2D[]) => {
+      if (points.length === 0) return;
 
-      onAppendStrokePoint(point);
+      let pointsToAppend = points;
+      if (!isInputDrawingReference.current) {
+        if (!beginStrokeAtPoint(points[0])) return;
+        pointsToAppend = points.slice(1);
+      }
+
+      if (pointsToAppend.length > 0) {
+        onAppendStrokePoint(pointsToAppend);
+      }
     };
 
     const finishStroke = () => {
@@ -693,7 +706,9 @@ ${JSON.stringify(touchEvents.slice(-80), undefined, 2)}
 
       event.preventDefault();
       event.stopPropagation();
-      appendStroke(event.clientX, event.clientY);
+      appendStrokePoints(
+        getPointerPointsFromEvent(event, getInputPointFromPointerEvent),
+      );
     };
 
     const handlePointerEnd = (event: PointerEvent) => {
@@ -735,10 +750,12 @@ ${JSON.stringify(touchEvents.slice(-80), undefined, 2)}
     const handleTouchMove = (event: TouchEvent) => {
       const touch = getActiveTouch(event.changedTouches);
       if (!touch) return;
+      const point = getInputPoint(touch.clientX, touch.clientY);
+      if (!point) return;
 
       event.preventDefault();
       event.stopPropagation();
-      appendStroke(touch.clientX, touch.clientY);
+      appendStrokePoints([point]);
     };
 
     const handleTouchEnd = (event: TouchEvent) => {
@@ -753,10 +770,12 @@ ${JSON.stringify(touchEvents.slice(-80), undefined, 2)}
       finishStroke();
     };
 
+    const drawingMoveEvent = getPreferredPointerMoveEventName(window);
+
     captureElement.addEventListener("pointerdown", handlePointerDown, {
       capture: true,
     });
-    captureElement.addEventListener("pointermove", handlePointerMove, {
+    captureElement.addEventListener(drawingMoveEvent, handlePointerMove, {
       capture: true,
     });
     captureElement.addEventListener("pointerup", handlePointerEnd, {
@@ -789,7 +808,7 @@ ${JSON.stringify(touchEvents.slice(-80), undefined, 2)}
         true,
       );
       captureElement.removeEventListener(
-        "pointermove",
+        drawingMoveEvent,
         handlePointerMove,
         true,
       );
@@ -1032,7 +1051,11 @@ ${JSON.stringify(touchEvents.slice(-80), undefined, 2)}
                 className="stage-canvas stage-ink-canvas"
                 dpr={[1, 2]}
                 frameloop="demand"
-                gl={{ alpha: true, preserveDrawingBuffer: true }}
+                gl={{
+                  alpha: true,
+                  antialias: true,
+                  preserveDrawingBuffer: true,
+                }}
                 style={isInkPassive ? { pointerEvents: "none" } : undefined}
               >
                 {!isInkPassive && showPerformanceMonitor ? (

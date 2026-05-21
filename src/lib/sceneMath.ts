@@ -34,15 +34,15 @@ const resizeHandles: ResizeHandle[] = [
   "w",
 ];
 
-const strokePointMinDistance = 2.2;
+const strokePointMinDistance = 1.4;
 const strokeSimplifyBaseEpsilon = 2.8;
 const strokeSimplifySizeFactor = 0.85;
 const strokeSimplifyTargetSpacing = 14;
 const strokeSimplifyMinPointCount = 18;
 const strokeSimplifyMaxPointCount = 140;
-const strokeCurveMinStep = 2.5;
-const strokeCurveMaxStep = 8;
-const strokeCurveSharpCornerDegrees = 72;
+const strokeCurveMinStep = 1.8;
+const strokeCurveMaxStep = 6;
+const strokeCurveSharpCornerDegrees = 88;
 const activeStrokeTailPointCount = 8;
 type StrokeRenderSmoothingMode = "catmullrom" | "smoothed";
 const strokeRenderSmoothingMode: StrokeRenderSmoothingMode = "catmullrom";
@@ -988,7 +988,7 @@ export function getStrokeRenderPoints(
 
   const smoothingMode = options?.smoothingMode ?? strokeRenderSmoothingMode;
   const targetStep = THREE.MathUtils.clamp(
-    (options?.strokeSize ?? 4) * 0.75,
+    (options?.strokeSize ?? 4) * 0.55,
     strokeCurveMinStep,
     strokeCurveMaxStep,
   );
@@ -1020,7 +1020,7 @@ export function getStableActiveStrokeRenderPoints(input: {
   }
 
   const targetStep = THREE.MathUtils.clamp(
-    strokeSize * 0.75,
+    strokeSize * 0.55,
     strokeCurveMinStep,
     strokeCurveMaxStep,
   );
@@ -1084,7 +1084,9 @@ function getCatmullRomChunkedPoints(points: Point2D[], targetStep: number) {
     sampledPoints.push(...segmentPoints.slice(1));
   }
 
-  return sampledPoints.length > 1 ? sampledPoints : getLineCurvePoints(points, targetStep);
+  return sampledPoints.length > 1
+    ? sampledPoints
+    : getLineCurvePoints(points, targetStep);
 }
 
 function getCatmullRomPoints(points: Point2D[], targetStep: number) {
@@ -1160,7 +1162,11 @@ function getLineCurvePoints(points: Point2D[], targetStep: number) {
       new THREE.Vector2(next.x, next.y),
     );
     const segmentPoints = segmentCurve.getPoints(divisions);
-    for (let pointIndex = 1; pointIndex < segmentPoints.length; pointIndex += 1) {
+    for (
+      let pointIndex = 1;
+      pointIndex < segmentPoints.length;
+      pointIndex += 1
+    ) {
       const point = segmentPoints[pointIndex];
       sampledPoints.push({ x: point.x, y: point.y });
     }
@@ -1169,7 +1175,10 @@ function getLineCurvePoints(points: Point2D[], targetStep: number) {
   return sampledPoints;
 }
 
-function getSharpCornerSplitIndices(points: Point2D[], thresholdDegrees: number) {
+function getSharpCornerSplitIndices(
+  points: Point2D[],
+  thresholdDegrees: number,
+) {
   const splitIndices = [0];
 
   for (let index = 1; index < points.length - 1; index += 1) {
