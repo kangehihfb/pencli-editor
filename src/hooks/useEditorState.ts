@@ -38,6 +38,10 @@ import {
   clampTextFontSize,
   measureTextObject,
 } from "../lib/objectTexture";
+import {
+  normalizeStrokePoint,
+  normalizeStrokePoints,
+} from "../lib/realtimeInkProtocol";
 
 const activeExamObjectId = "object_exam_active";
 const maxHistorySize = 80;
@@ -946,10 +950,11 @@ function useEditorState(
   const beginStroke = (point: Point2D): Stroke | undefined => {
     if (readonly) return undefined;
     recordHistory();
+    const normalizedPoint = normalizeStrokePoint(point);
     const stroke: Stroke = {
       id: makeId("stroke"),
       kind: "stroke",
-      points: [point],
+      points: [normalizedPoint],
       color: penColor,
       size: penSize,
       layer: maxLayer + 1,
@@ -1021,9 +1026,9 @@ function useEditorState(
   const appendStrokePoint = (pointOrPoints: Point2D | Point2D[]): void => {
     const targetStrokeId = activeStrokeIdReference.current;
     if (!targetStrokeId) return;
-    const pointsToAppend = Array.isArray(pointOrPoints)
-      ? pointOrPoints
-      : [pointOrPoints];
+    const pointsToAppend = normalizeStrokePoints(
+      Array.isArray(pointOrPoints) ? pointOrPoints : [pointOrPoints],
+    );
     if (pointsToAppend.length === 0) return;
 
     setStrokes((previous) =>

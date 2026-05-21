@@ -190,6 +190,23 @@ const defaultPageId = "page-1";
 const defaultRole: RealtimeInkRole = "student";
 const defaultReceiveTraceSampleRate = 1;
 
+function isTruthyDebugFlag(value: string | null | undefined): boolean {
+  return value === "" || value === "1" || value === "true";
+}
+
+function isStrokePointDebugEnabled(): boolean {
+  if (typeof globalThis.location === "undefined") return false;
+
+  const parameters = new URLSearchParams(globalThis.location.search);
+  if (isTruthyDebugFlag(parameters.get("pointDebug"))) return true;
+
+  try {
+    return isTruthyDebugFlag(globalThis.localStorage?.getItem("pointDebug"));
+  } catch {
+    return false;
+  }
+}
+
 export const initialYjsDebug: RealtimeInkYjsDebug = {
   strokeCount: 0,
   remoteStrokeCount: 0,
@@ -225,10 +242,20 @@ export function normalizeStrokePointCoordinate(value: number): number {
 }
 
 export function normalizeStrokePoint(point: Point2D): Point2D {
-  return {
+  const normalizedPoint = {
     x: normalizeStrokePointCoordinate(point.x),
     y: normalizeStrokePointCoordinate(point.y),
   };
+
+  if (isStrokePointDebugEnabled()) {
+    console.log("[stroke-point-normalize]", {
+      raw: point,
+      normalized: normalizedPoint,
+      changed: normalizedPoint.x !== point.x || normalizedPoint.y !== point.y,
+    });
+  }
+
+  return normalizedPoint;
 }
 
 export function normalizeStrokePoints(points: Point2D[]): Point2D[] {
