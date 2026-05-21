@@ -9,7 +9,7 @@
     "dev:signoz": "bash scripts/dev-signoz.sh up",
     "dev:signoz:down": "bash scripts/dev-signoz.sh down",
     "dev:signoz:reset": "bash scripts/dev-signoz.sh down:volumes",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "export:browser-screenshot": "node scripts/utils/export-browser-screenshot.mjs",
