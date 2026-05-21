@@ -1,7 +1,7 @@
 import { Text } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
 import { useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
 import {
   EDITOR_TEXT_TROIKA_PRELOAD_CHARACTERS,
@@ -211,31 +211,33 @@ export function WebGLObjectMesh({
         />
       </mesh>
       {object.kind === "text" && shouldRenderTroikaText ? (
-        <Text
-          name={`${objectSceneName}:troika-text`}
-          font={textFontUrl}
-          characters={`${EDITOR_TEXT_TROIKA_PRELOAD_CHARACTERS}${textValue}`}
-          sdfGlyphSize={troikaTextSdfGlyphSize}
-          fontSize={object.fontSize}
-          maxWidth={visualSize.width}
-          color={object.color}
-          lineHeight={1.22}
-          anchorX="center"
-          anchorY="middle"
-          textAlign="center"
-          whiteSpace="normal"
-          scale={[1, -1, 1]}
-          renderOrder={object.layer * 10 + 1}
-          userData={{
-            sceneType: "object",
-            sceneId: object.id,
-            sceneKind: object.kind,
-            sceneLayer: object.layer,
-            sceneName: objectSceneName,
-          }}
-        >
-          {textValue || " "}
-        </Text>
+        <Suspense fallback={undefined}>
+          <Text
+            name={`${objectSceneName}:troika-text`}
+            font={textFontUrl}
+            characters={`${EDITOR_TEXT_TROIKA_PRELOAD_CHARACTERS}${textValue}`}
+            sdfGlyphSize={troikaTextSdfGlyphSize}
+            fontSize={object.fontSize}
+            maxWidth={visualSize.width}
+            color={object.color}
+            lineHeight={1.22}
+            anchorX="center"
+            anchorY="middle"
+            textAlign="center"
+            whiteSpace="normal"
+            scale={[1, -1, 1]}
+            renderOrder={object.layer * 10 + 1}
+            userData={{
+              sceneType: "object",
+              sceneId: object.id,
+              sceneKind: object.kind,
+              sceneLayer: object.layer,
+              sceneName: objectSceneName,
+            }}
+          >
+            {textValue || " "}
+          </Text>
+        </Suspense>
       ) : undefined}
       {(selected || groupSelected) && !isExamImage && !editing ? (
         <>
